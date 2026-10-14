@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lithology Report</title>
+
+https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.jsscript>
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    margin:20px;
+    background:#f0f0f0;
+}
+
+#controls{
+    margin-bottom:20px;
+}
+
+button{
+    padding:10px 20px;
+    font-size:14px;
+    cursor:pointer;
+}
+
+.well-page{
+    background:white;
+    padding:20px;
+    margin-bottom:20px;
+    page-break-after:always;
+}
+
+.profile-wrap{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+}
+
+.depth-axis{
+    width:55px;
+    font-size:11px;
+    text-align:right;
+    padding-right:5px;
+    border-right:1px solid #777;
+}
+
+.log-column{
+    width:160px;
+    border:1px solid #333;
+    background:#f0f0f0;
+}
+
+.interval{
+    box-sizing:border-box;
+    border-bottom:1px solid #444;
+    padding:2px 4px;
+    font-size:10px;
+    line-height:1.1;
+    overflow:hidden;
+    color:#111;
+}
+
+.legend{
+    margin-top:15px;
+    font-size:11px;
+}
+
+.legend-item{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    margin-bottom:3px;
+}
+
+.swatch{
+    width:12px;
+    height:12px;
+    border:1px solid #444;
+    display:inline-block;
+}
+</style>
+</head>
+
+<body>
+
+<div id="controls">
+    <button onclick="downloadPDF()">Download PDF</button>
+</div>
+
+<div id="report"></div>
+
+<script>
+
+const params = new URLSearchParams(window.location.search);
+
+const wellIds =
+    (params.get("wells") || "")
+        .split(",")
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
+
+const lithologyQueryUrl =
+"https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
+
+function getColor(lithology){
+
+    const lith = String(lithology || "").toLowerCase();
+
+    if(lith.includes("sand")) return "#f4d03f";
+    if(lith.includes("silt")) return "#c2b280";
+    if(lith.includes("clay")) return "#a67c52";
+    if(lith.includes("gravel")) return "#9e9e9e";
+
+    if(
+        lith.includes("till") ||
+        lith.includes("diamicton")
+    ) return "#b0c4de";
+
+    if(
+        lith.includes("rock") ||
+        lith.includes("bedrock") ||
+        lith.includes("limestone") ||
+        lith.includes("shale") ||
+        lith.includes("dolomite")
+    ) return "#95a5a6";
+
+    return "#d5d8dc";
+}
+
+async function getLithology(wellId){
+
+    const whereClause =
+        `WELLID='${wellId.replaceAll("'","''")}'`;
+
+    const queryParams = new URLSearchParams({
+        f:"json",
+        where:whereClause,
+        outFields:"*",
+        returnGeometry:"false",
+        orderByFields:"SEQ_NUM"
+    });
+
+    const response =
+        await fetch(
+            `${lithologyQueryUrl}?${queryParams}`
+        );
+
+    const data = await response.json();
+
+    if(!data.features) return [];
+
+    return data.features
+        .map(f => f.attributes)
+        .sort(
+            (a,b)=>
+            Number(a.SEQ_NUM)-Number(b.SEQ_NUM)
+        );
+}
+
+function createLegend(){
+
+    return `
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#f4d03f"></span> Sand</div>
+      <div class="legend-item"><span class="swatch" style="background:#c2b280"></span> Silt</div>
+      <div class="legend-item"><span class="swatch" style="background:#a67c52"></span> Clay</div>
+      <div class="legend-item"><span class="swatch" style="background:#9e9e9e"></span> Gravel</div>
+      <div class="legend-item"><span class="swatch" style="background:#b0c4de"></span> Till / Diamicton</div>
+      <div class="legend-item"><span class="swatch" style="background:#95a5a6"></span> Rock / Bedrock</div>
+      <div class="legend-item"><span class="swatch" style="background:#d5d8dc"></span> Other</div>
+    </div>
+    `;
+}
+
+async function renderWell(wellId){
+
+    const rows = await getLithology(wellId);
+
+    const report = document.getElementById("report");
+
+    const page = document.createElement("div");
+    page.className = "well-page";
+
+    page.innerHTML =
+        `<h2>Well ${wellId}</h2>`;
+
+    if(rows.length===0){
+
+        page.innerHTML +=
+            "<p>No lithology found.</p>";
+
+        report.appendChild(page);
+        return;
+    }
+
+    const intervals = rows.map(row=>{
+
+        const bottomDepth =
+            Number(row.DEPTH)||0;
+
+        const thickness =
+            Number(row.THICKNESS)||0;
+
+        const topDepth =
+            Math.max(bottomDepth-thickness,0);
+
+        return{
+            topDepth,
+            bottomDepth,
+            thickness:Math.max(thickness,1),
+            lithology:
+                row.PRIM_LITH || "Unknown"
+        };
+    });
+
+    const maxDepth =
+        Math.max(
+            ...intervals.map(
+                i=>i.bottomDepth
+            )
+        );
+
+    const maxHeight = 450;
+    const scale = maxHeight/maxDepth;
+
+    let intervalHtml="";
+
+    intervals.forEach(interval=>{
+
+        const height =
+            interval.thickness * scale;
+
+        const color =
+            getColor(interval.lithology);
+
+        const showLabel =
+            height > 30;
+
+        intervalHtml += `
+        <div
+            class="interval"
+            style="
+                height:${height}px;
+                background:${color};
+            ">
+            ${
+                showLabel
+                ?
+                `
+                <strong>
+                ${interval.topDepth}
+                -
+                ${interval.bottomDepth} ft
+                </strong><br>
+                ${interval.lithology}
+                `
+                :
+                ""
+            }
+        </div>
+        `;
+    });
+
+    page.innerHTML += `
+    <div class="profile-wrap">
+
+        <div class="depth-axis">
+            <div>0 ft</div>
+            <div style="margin-top:${maxHeight-20}px">
+                ${maxDepth} ft
+            </div>
+        </div>
+
+        <div
+            class="log-column"
+            style="height:${maxDepth*scale}px">
+
+            ${intervalHtml}
+
+        </div>
+
+    </div>
+
+    ${createLegend()}
+    `;
+
+    report.appendChild(page);
+}
+
+async function loadReport(){
+
+    for(const wellId of wellIds){
+
+        await renderWell(wellId);
+
+    }
+}
+
+function downloadPDF(){
+
+    html2pdf()
+        .set({
+            margin:0.5,
+            filename:"Lithology_Report.pdf",
+            image:{
+                type:"jpeg",
+                quality:1
+            },
+            html2canvas:{
+                scale:2
+            },
+            jsPDF:{
+                unit:"in",
+                format:"letter",
+                orientation:"portrait"
+            }
+        })
+        .from(
+            document.getElementById("report")
+        )
+        .save();
+}
+
+loadReport();
+
+</script>
+
+</body>
+</html>
