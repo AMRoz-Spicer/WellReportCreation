@@ -90,7 +90,6 @@ button{
 <div id="report"></div>
 
 <script>
-// Parse query parameters correctly
 const params = new URLSearchParams(window.location.search);
 const wellsParam = params.get("wells") || params.get("well") || "";
 
@@ -99,8 +98,9 @@ const wellIds = wellsParam
     .map(id => id.trim())
     .filter(id => id.length > 0);
 
+// Restored correct EGLE subdomain domain
 const lithologyQueryUrl =
-"https://gis-egle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
+"https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
 
 function getColor(lithology){
     const lith = String(lithology || "").toLowerCase();
@@ -123,19 +123,17 @@ function getColor(lithology){
     return "#d5d8dc";
 }
 
-// Fetch all requested wells in a single bulk query using an IN clause
-async function getAllLithology(ids){
-    if(ids.length === 0) return {};
-
-    const quotedIds = ids.map(id => `'${id.replaceAll("'","''")}'`).join(",");
-    const whereClause = `WELLID IN (${quotedIds})`;
+// Fetch individual well lithology reliably to prevent bulk query truncation issues
+async function getLithology(wellId){
+    const cleanId = String(wellId).trim();
+    const whereClause = `WELLID='${cleanId.replaceAll("'","''")}'`;
 
     const queryParams = new URLSearchParams({
-        f:"json",
+        f: "json",
         where: whereClause,
-        outFields:"*",
-        returnGeometry:"false",
-        orderByFields:"WELLID, SEQ_NUM"
+        outFields: "*",
+        returnGeometry: "false",
+        orderByFields: "SEQ_NUM"
     });
 
     try {
@@ -143,31 +141,16 @@ async function getAllLithology(ids){
         const data = await response.json();
 
         if(!data.features || data.features.length === 0) {
-            console.warn("No features found for requested wells:", ids);
-            return {};
+            console.warn("No features found for Well ID:", cleanId);
+            return [];
         }
 
-        // Group features by Well ID
-        const grouped = {};
-        ids.forEach(id => grouped[id] = []);
-
-        data.features.forEach(f => {
-            const attr = f.attributes;
-            // Find matching well ID case-insensitively or exact match
-            const matchedId = ids.find(w => w.toLowerCase() === String(attr.WELLID).toLowerCase()) || attr.WELLID;
-            if(!grouped[matchedId]) grouped[matchedId] = [];
-            grouped[matchedId].push(attr);
-        });
-
-        // Sort each well's rows by sequence number
-        Object.keys(grouped).forEach(id => {
-            grouped[id].sort((a,b) => Number(a.SEQ_NUM) - Number(b.SEQ_NUM));
-        });
-
-        return grouped;
+        return data.features
+            .map(f => f.attributes)
+            .sort((a,b) => Number(a.SEQ_NUM) - Number(b.SEQ_NUM));
     } catch (err) {
-        console.error("Error fetching bulk lithology data:", err);
-        return {};
+        console.error("Error fetching lithology data for well " + cleanId, err);
+        return [];
     }
 }
 
@@ -185,10 +168,12 @@ function createLegend(){
     `;
 }
 
-function renderWellData(wellId, rows){
+async function renderWell(wellId){
     const report = document.getElementById("report");
     const page = document.createElement("div");
     page.className = "well-page";
+
+    const rows = await getLithology(wellId);
 
     if(!rows || rows.length === 0){
         page.innerHTML = `<h2>Well ${wellId}</h2><p>No lithology data found for this ID.</p>`;
@@ -256,13 +241,9 @@ async function loadReport(){
         return;
     }
 
-    // Fetch all wells at once in a single bulk request
-    const allData = await getAllLithology(wellIds);
-
-    // Render each well page in order
+    // Process wells sequentially to guarantee reliable rendering order and API rate limits
     for(const wellId of wellIds){
-        const rows = allData[wellId] || [];
-        renderWellData(wellId, rows);
+        await renderWell(wellId);
     }
 }
 
