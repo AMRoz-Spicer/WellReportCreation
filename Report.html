@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <title>Lithology Report</title>
 
-<!-- Fixed html2pdf CDN script tag -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <style>
@@ -79,7 +78,7 @@ button{
     border:1px solid #444;
     display:inline-block;
 }
-</style> <!-- Added missing style tag closure -->
+</style>
 </head>
 
 <body>
@@ -91,20 +90,20 @@ button{
 <div id="report"></div>
 
 <script>
-
+// Parse query parameters correctly
 const params = new URLSearchParams(window.location.search);
+const wellsParam = params.get("wells") || params.get("well") || "";
 
-const wellIds =
-    (params.get("wells") || "")
-        .split(",")
-        .map(id => id.trim())
-        .filter(id => id.length > 0);
+const wellIds = wellsParam
+    .split(",")
+    .map(id => id.trim())
+    .filter(id => id.length > 0);
 
+// Corrected ArcGIS REST endpoint URL (fixed 'gisagoegle' typo)
 const lithologyQueryUrl =
-"https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
+"https://gis-egle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
 
 function getColor(lithology){
-
     const lith = String(lithology || "").toLowerCase();
 
     if(lith.includes("sand")) return "#f4d03f";
@@ -112,10 +111,7 @@ function getColor(lithology){
     if(lith.includes("clay")) return "#a67c52";
     if(lith.includes("gravel")) return "#9e9e9e";
 
-    if(
-        lith.includes("till") ||
-        lith.includes("diamicton")
-    ) return "#b0c4de";
+    if(lith.includes("till") || lith.includes("diamicton")) return "#b0c4de";
 
     if(
         lith.includes("rock") ||
@@ -129,9 +125,7 @@ function getColor(lithology){
 }
 
 async function getLithology(wellId){
-
-    const whereClause =
-        `WELLID='${wellId.replaceAll("'","''")}'`;
+    const whereClause = `WELLID='${wellId.replaceAll("'","''")}'`;
 
     const queryParams = new URLSearchParams({
         f:"json",
@@ -141,25 +135,25 @@ async function getLithology(wellId){
         orderByFields:"SEQ_NUM"
     });
 
-    const response =
-        await fetch(
-            `${lithologyQueryUrl}?${queryParams}`
-        );
+    try {
+        const response = await fetch(`${lithologyQueryUrl}?${queryParams}`);
+        const data = await response.json();
 
-    const data = await response.json();
+        if(!data.features || data.features.length === 0) {
+            console.warn("No features found for Well ID:", wellId);
+            return [];
+        }
 
-    if(!data.features) return [];
-
-    return data.features
-        .map(f => f.attributes)
-        .sort(
-            (a,b)=>
-            Number(a.SEQ_NUM)-Number(b.SEQ_NUM)
-        );
+        return data.features
+            .map(f => f.attributes)
+            .sort((a,b) => Number(a.SEQ_NUM) - Number(b.SEQ_NUM));
+    } catch (err) {
+        console.error("Error fetching lithology data:", err);
+        return [];
+    }
 }
 
 function createLegend(){
-
     return `
     <div class="legend">
       <div class="legend-item"><span class="swatch" style="background:#f4d03f"></span> Sand</div>
@@ -174,82 +168,48 @@ function createLegend(){
 }
 
 async function renderWell(wellId){
-
-    const rows = await getLithology(wellId);
     const report = document.getElementById("report");
-
     const page = document.createElement("div");
     page.className = "well-page";
 
+    const rows = await getLithology(wellId);
+
     if(rows.length === 0){
-        page.innerHTML = `<h2>Well ${wellId}</h2><p>No lithology found.</p>`;
+        page.innerHTML = `<h2>Well ${wellId}</h2><p>No lithology data found for this ID.</p>`;
         report.appendChild(page);
         return;
     }
 
-    const intervals = rows.map(row=>{
+    const intervals = rows.map(row => {
+        const bottomDepth = Number(row.DEPTH) || 0;
+        const thickness = Number(row.THICKNESS) || 0;
+        const topDepth = Math.max(bottomDepth - thickness, 0);
 
-        const bottomDepth =
-            Number(row.DEPTH)||0;
-
-        const thickness =
-            Number(row.THICKNESS)||0;
-
-        const topDepth =
-            Math.max(bottomDepth-thickness,0);
-
-        return{
+        return {
             topDepth,
             bottomDepth,
-            thickness:Math.max(thickness,1),
-            lithology:
-                row.PRIM_LITH || "Unknown"
+            thickness: Math.max(thickness, 1),
+            lithology: row.PRIM_LITH || "Unknown"
         };
     });
 
-    const maxDepth =
-        Math.max(
-            ...intervals.map(
-                i=>i.bottomDepth
-            )
-        );
-
+    const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
     const maxHeight = 450;
-    const scale = maxHeight/maxDepth;
+    const scale = maxDepth > 0 ? maxHeight / maxDepth : 1;
 
-    let intervalHtml="";
+    let intervalHtml = "";
 
-    intervals.forEach(interval=>{
-
-        const height =
-            interval.thickness * scale;
-
-        const color =
-            getColor(interval.lithology);
-
-        const showLabel =
-            height > 30;
+    intervals.forEach(interval => {
+        const height = interval.thickness * scale;
+        const color = getColor(interval.lithology);
+        const showLabel = height > 30;
 
         intervalHtml += `
-        <div
-            class="interval"
-            style="
-                height:${height}px;
-                background:${color};
-            ">
+        <div class="interval" style="height:${height}px; background:${color};">
             ${
                 showLabel
-                ?
-                `
-                <strong>
-                ${interval.topDepth}
-                -
-                ${interval.bottomDepth} ft
-                </strong><br>
-                ${interval.lithology}
-                `
-                :
-                ""
+                ? `<strong>${interval.topDepth} - ${interval.bottomDepth} ft</strong><br>${interval.lithology}`
+                : ""
             }
         </div>
         `;
@@ -258,24 +218,16 @@ async function renderWell(wellId){
     page.innerHTML = `
         <h2>Well ${wellId}</h2>
         <div class="profile-wrap">
-
             <div class="depth-axis">
                 <div>0 ft</div>
-                <div style="margin-top:${maxHeight-20}px">
+                <div style="margin-top:${Math.max(maxHeight-20, 10)}px">
                     ${maxDepth} ft
                 </div>
             </div>
-
-            <div
-                class="log-column"
-                style="height:${maxDepth*scale}px">
-
+            <div class="log-column" style="height:${maxDepth * scale}px">
                 ${intervalHtml}
-
             </div>
-
         </div>
-
         ${createLegend()}
     `;
 
@@ -283,38 +235,30 @@ async function renderWell(wellId){
 }
 
 async function loadReport(){
+    if(wellIds.length === 0){
+        document.getElementById("report").innerHTML = "<p><strong>Error:</strong> No Well ID provided in the URL parameters (e.g., <code>?wells=YOUR_WELL_ID</code>).</p>";
+        return;
+    }
+
     for(const wellId of wellIds){
         await renderWell(wellId);
     }
 }
 
 function downloadPDF(){
-
     html2pdf()
         .set({
-            margin:0.5,
-            filename:"Lithology_Report.pdf",
-            image:{
-                type:"jpeg",
-                quality:1
-            },
-            html2canvas:{
-                scale:2
-            },
-            jsPDF:{
-                unit:"in",
-                format:"letter",
-                orientation:"portrait"
-            }
+            margin: 0.5,
+            filename: "Lithology_Report.pdf",
+            image: { type: "jpeg", quality: 1 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: "in", format: "letter", orientation: "portrait" }
         })
-        .from(
-            document.getElementById("report")
-        )
+        .from(document.getElementById("report"))
         .save();
 }
 
 loadReport();
-
 </script>
 
 </body>
