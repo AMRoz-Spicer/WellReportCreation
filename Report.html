@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <title>Lithology Report</title>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html1/html2pdf.bundle.min.jsscript">
-    
+<!-- Fixed html2pdf CDN script tag -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <style>
 body{
     font-family:Arial,sans-serif;
@@ -78,7 +79,7 @@ button{
     border:1px solid #444;
     display:inline-block;
 }
-</style>
+</style> <!-- Added missing style tag closure -->
 </head>
 
 <body>
@@ -175,20 +176,13 @@ function createLegend(){
 async function renderWell(wellId){
 
     const rows = await getLithology(wellId);
-
     const report = document.getElementById("report");
 
     const page = document.createElement("div");
     page.className = "well-page";
 
-    page.innerHTML =
-        `<h2>Well ${wellId}</h2>`;
-
-    if(rows.length===0){
-
-        page.innerHTML +=
-            "<p>No lithology found.</p>";
-
+    if(rows.length === 0){
+        page.innerHTML = `<h2>Well ${wellId}</h2><p>No lithology found.</p>`;
         report.appendChild(page);
         return;
     }
@@ -261,38 +255,36 @@ async function renderWell(wellId){
         `;
     });
 
-    page.innerHTML += `
-    <div class="profile-wrap">
+    page.innerHTML = `
+        <h2>Well ${wellId}</h2>
+        <div class="profile-wrap">
 
-        <div class="depth-axis">
-            <div>0 ft</div>
-            <div style="margin-top:${maxHeight-20}px">
-                ${maxDepth} ft
+            <div class="depth-axis">
+                <div>0 ft</div>
+                <div style="margin-top:${maxHeight-20}px">
+                    ${maxDepth} ft
+                </div>
             </div>
+
+            <div
+                class="log-column"
+                style="height:${maxDepth*scale}px">
+
+                ${intervalHtml}
+
+            </div>
+
         </div>
 
-        <div
-            class="log-column"
-            style="height:${maxDepth*scale}px">
-
-            ${intervalHtml}
-
-        </div>
-
-    </div>
-
-    ${createLegend()}
+        ${createLegend()}
     `;
 
     report.appendChild(page);
 }
 
 async function loadReport(){
-
     for(const wellId of wellIds){
-
         await renderWell(wellId);
-
     }
 }
 
