@@ -659,12 +659,18 @@ async function loadMaps(){
 // ======================================================
 // PDF EXPORT
 // ======================================================
+// ======================================================
+// PDF EXPORT
+// ======================================================
 function downloadPDF(){
+    const rawTitle = getCustomTitle();
+    const safeFilename = rawTitle.replace(/[^a-zA-Z0-9-_]/g, "_") + ".pdf";
+
     html2pdf()
         .set({
             margin: 0.3,
-            filename: "Lithology_Dashboard.pdf",
-            image: { type: "jpeg", quality: 1 },
+            filename: safeFilename, // Dynamically uses the user's title
+            image: { type: "jpeg", quality: 1.0 },
             html2canvas: { scale: 2.5, backgroundColor: "#ffffff", scrollY: 0, useCORS: true },
             jsPDF: { unit: "in", format: "letter", orientation: "landscape" }
         })
