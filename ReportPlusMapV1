@@ -208,7 +208,7 @@ const MAX_WELLS = 10;
 const COMMON_SCALE = false;   // true = all wells drawn on the same depth scale
 
 // >>> FILL THIS IN: REST URL of your wells point layer <<<
-const WELLS_LAYER_URL = "PASTE_YOUR_WELLS_LAYER_URL_HERE";
+const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
 const WELLS_ID_FIELD  = "WELLID";
 
 // Aerial imagery (public tile service, no API key needed)
