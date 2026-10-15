@@ -95,7 +95,7 @@ button:disabled {
 .middle-row {
     display: flex;
     gap: 10px;
-    height: 350px;
+    height: 340px;
     flex: none;
 }
 
@@ -103,17 +103,17 @@ button:disabled {
     flex: 1;
     border: 1px solid #bbb;
     background: #fafafa;
-    padding: 8px;
+    padding: 6px;
     box-sizing: border-box;
     overflow-y: auto;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     align-content: flex-start;
 }
 
 .index-map-wrapper {
-    width: 300px;
+    width: 290px;
     border: 1px solid #bbb;
     position: relative;
     background: #e8e8e8;
@@ -146,15 +146,15 @@ button:disabled {
 .well-card {
     box-sizing: border-box;
     border: 1px solid #bbb;
-    padding: 4px 6px;
+    padding: 4px 5px;
     background: white;
-    font-size: 10px;
+    font-size: 9px;
 }
 
 .well-title {
-    height: 16px;
+    height: 14px;
     margin-bottom: 2px;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
     white-space: nowrap;
     overflow: hidden;
@@ -162,19 +162,19 @@ button:disabled {
 }
 
 .no-data {
-    font-size: 10px;
+    font-size: 9px;
     color: #555;
 }
 
 .profile-wrap {
     display: flex;
-    gap: 4px;
+    gap: 3px;
 }
 
 .depth-axis {
     position: relative;
     box-sizing: border-box;
-    width: 36px;
+    width: 32px;
     font-size: 8px;
     text-align: right;
     padding-right: 3px;
@@ -229,7 +229,7 @@ button:disabled {
         <!-- 1. Title Block -->
         <div class="report-header" id="pageHeaderEl">Lithology Report</div>
 
-        <!-- 2. Middle Row: Charts & Index Map -->
+        <!-- 2. Middle Row: 8 Charts (Left) & Index Map (Right) -->
         <div class="middle-row">
             <div class="charts-container" id="wellGrid">
                 <p style="font-size:11px; color:#555;">Loading wells...</p>
@@ -252,7 +252,7 @@ button:disabled {
 
 <script>
 // ---------- Settings ----------
-const MAX_WELLS = 6; // Optimized for split middle panel layout
+const MAX_WELLS = 8; // Configured for up to 8 charts on one page
 const COMMON_SCALE = false;
 
 const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
@@ -388,7 +388,7 @@ function buildCard(wellId, intervals, cardW, chartH, depthForScale){
     intervals.forEach(interval => {
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
-        const showLabel = height > 20;
+        const showLabel = height > 18;
 
         intervalHtml += `
         <div class="interval" style="height:${height}px; background:${color};">
@@ -426,9 +426,8 @@ async function loadReport(){
     const allRows = await Promise.all(wellIds.map(getLithology));
     const allIntervals = allRows.map(rowsToIntervals);
 
-    const n = wellIds.length;
-    const cardW = 125; // Compact width to fit nicely in side panel
-    const chartH = 260;
+    const cardW = 142; // Optimized width for 4 columns of cards
+    const chartH = 120; // Optimized height for 2 rows of charts
 
     grid.innerHTML = "";
 
