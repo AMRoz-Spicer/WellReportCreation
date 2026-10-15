@@ -72,17 +72,17 @@ button:disabled {
     box-sizing: border-box;
     width: 1000px;
     height: 750px;
-    padding: 12px;
+    padding: 10px 12px;
     background: white;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .report-header {
-    height: 24px;
-    font-size: 15px;
+    height: 22px;
+    font-size: 14px;
     font-weight: bold;
     flex: none;
     display: flex;
@@ -95,7 +95,7 @@ button:disabled {
 .middle-row {
     display: flex;
     gap: 8px;
-    height: 380px;
+    height: 410px;
     flex: none;
 }
 
@@ -191,7 +191,7 @@ button:disabled {
 .well-title {
     height: 11px;
     margin-bottom: 1px;
-    font-size: 8.5px;
+    font-size: 8px;
     font-weight: bold;
     white-space: nowrap;
     overflow: hidden;
@@ -212,7 +212,7 @@ button:disabled {
     position: relative;
     box-sizing: border-box;
     width: 24px;
-    font-size: 6.5px;
+    font-size: 6px;
     text-align: right;
     padding-right: 2px;
     border-right: 1px solid #777;
@@ -236,17 +236,17 @@ button:disabled {
     box-sizing: border-box;
     border-bottom: 1px solid #444;
     padding: 1px 2px;
-    font-size: 6.5px;
+    font-size: 6px;
     line-height: 1;
     overflow: hidden;
     color: #111;
 }
 
 .map-caption {
-    height: 22px;
+    height: 20px;
     flex: none;
-    font-size: 8.5px;
-    line-height: 1.2;
+    font-size: 8px;
+    line-height: 1.1;
     overflow: hidden;
     color: #333;
 }
@@ -376,7 +376,7 @@ function buildLegend(){
 }
 
 // ======================================================
-// CHARTS LOADING WITH BULLETPROOF SIZING FOR 1-8 WELLS
+// CHARTS LOADING WITH EXACT USER-DEFINED LAYOUT RULES
 // ======================================================
 async function getLithology(wellId){
     const cleanId = String(wellId).trim();
@@ -437,14 +437,14 @@ function buildCard(wellId, intervals, cardW, chartH, depthForScale){
 
     const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
     const scale = depthForScale > 0 ? chartH / depthForScale : 1;
-    const columnHeight = Math.max(Math.round(maxDepth * scale), 5);
+    const columnHeight = Math.max(Math.round(maxDepth * scale), 4);
 
     let intervalHtml = "";
 
     intervals.forEach(interval => {
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
-        const showLabel = height > 12;
+        const showLabel = height > 11;
 
         intervalHtml += `
         <div class="interval" style="height:${height}px; background:${color};">
@@ -461,7 +461,7 @@ function buildCard(wellId, intervals, cardW, chartH, depthForScale){
         <div class="profile-wrap">
             <div class="depth-axis" style="height:${columnHeight}px">
                 <span style="top:0">0ft</span>
-                <span style="top:${Math.max(columnHeight - 8, 5)}px">${maxDepth}ft</span>
+                <span style="top:${Math.max(columnHeight - 7, 4)}px">${maxDepth}ft</span>
             </div>
             <div class="log-column" style="height:${columnHeight}px">
                 ${intervalHtml}
@@ -486,29 +486,31 @@ async function loadReport(){
 
     const n = wellIds.length;
 
-    // Fluid column assignment: 
-    // 1-2 wells = 2 cols, 3-4 wells = 2 or 4 cols, 5-8 wells = 4 cols across 2 rows
+    // --- Exact User-Defined Grid Mapping (1 to 8 Wells) ---
     let cols = 4;
-    if (n === 1) cols = 1;
-    else if (n === 2 || n === 3 || n === 4) cols = 2;
-    else cols = 4; // 5, 6, 7, 8 wells all use 4 columns (2 rows max)
+    let rows = 2;
 
-    const rows = Math.ceil(n / cols);
+    if (n === 1) { cols = 1; rows = 1; }
+    else if (n === 2) { cols = 2; rows = 1; }
+    else if (n === 3) { cols = 3; rows = 1; }
+    else if (n === 4) { cols = 2; rows = 2; }
+    else if (n === 5 || n === 6) { cols = 3; rows = 2; }
+    else if (n === 7 || n === 8) { cols = 4; rows = 2; }
 
-    // Precise inner container boundaries to guarantee zero clipping
+    // Precise inner container boundaries guaranteeing zero clipping
     const containerW = 692; 
-    const containerH = 338;
+    const containerH = 376;
     const gap = 3;
 
     const cardW = Math.floor((containerW - (cols - 1) * gap) / cols);
-    const chartH = Math.floor((containerH - (rows - 1) * gap - (rows * 15)) / rows);
+    const chartH = Math.floor((containerH - (rows - 1) * gap - (rows * 14)) / rows);
 
     grid.innerHTML = "";
 
     wellIds.forEach((wellId, idx) => {
         const intervals = allIntervals[idx];
         const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-        grid.appendChild(buildCard(wellId, intervals, cardW, Math.max(chartH, 40), ownMax));
+        grid.appendChild(buildCard(wellId, intervals, cardW, Math.max(chartH, 35), ownMax));
     });
 }
 
