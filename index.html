@@ -17,12 +17,45 @@ body {
 
 #controls {
     margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #fff;
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 976px;
+    box-sizing: border-box;
+}
+
+#controls label {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+}
+
+#titleInput {
+    padding: 6px 10px;
+    font-size: 14px;
+    width: 320px;
+    border: 1px solid #888;
+    border-radius: 3px;
 }
 
 button {
-    padding: 10px 20px;
+    padding: 8px 18px;
     font-size: 14px;
     cursor: pointer;
+    background: #005e95;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+button:hover {
+    background: #004b78;
 }
 
 button:disabled {
@@ -167,6 +200,32 @@ button:disabled {
     display: none;
 }
 
+/* Index Map Inset Styles */
+#indexMapContainer {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 220px;
+    height: 160px;
+    border: 2px solid #333;
+    background: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    z-index: 20;
+    overflow: hidden;
+}
+
+#indexMapView, #indexMapShot {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+#indexMapShot {
+    display: none;
+}
+
 .map-message {
     padding: 12px;
     font-size: 12px;
@@ -187,6 +246,8 @@ button:disabled {
 <body>
 
 <div id="controls">
+    <label for="titleInput">Report Title:</label>
+    <input type="text" id="titleInput" value="Lithology Report" oninput="updateReportTitles()">
     <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
 </div>
 
@@ -197,6 +258,12 @@ button:disabled {
         <div id="mapWrap">
             <div id="mapView"></div>
             <img id="mapShot" alt="Map of selected wells">
+            
+            <!-- Index / Locator Map Inset (10x regional scale) -->
+            <div id="indexMapContainer">
+                <div id="indexMapView"></div>
+                <img id="indexMapShot" alt="Index map inset">
+            </div>
         </div>
         <div class="map-caption" id="mapCaption"></div>
     </div>
@@ -205,30 +272,30 @@ button:disabled {
 <script>
 // ---------- Settings ----------
 const MAX_WELLS = 10;
-const COMMON_SCALE = false;   // true = all wells drawn on the same depth scale
+const COMMON_SCALE = false;
 
-// >>> FILL THIS IN: REST URL of your wells point layer <<<
 const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
 const WELLS_ID_FIELD  = "WELLID";
 
-// Aerial imagery (public tile service, no API key needed)
 const IMAGERY_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer";
+const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer";
 
-// Minimum map width in meters, so a single well doesn't zoom in absurdly far
 const MIN_MAP_SPAN_M = 600;
 
-// Layout constants (page 1)
 const REPORT_H = 750;
 const REPORT_W = 1000;
 const PAD = 16;
 const HEADER_H = 26;
 const LEGEND_H = 30;
 const GAP = 12;
-const CARD_OVERHEAD = 44;     // title + card padding + borders
+const CARD_OVERHEAD = 44;     
 
 // ---------- URL parameters ----------
 const params = new URLSearchParams(window.location.search);
 const wellsParam = params.get("wells") || params.get("well") || "";
+const titleParam = params.get("title") || params.get("reportTitle") || "Lithology Report";
+
+document.getElementById("titleInput").value = titleParam;
 
 const allIds = wellsParam
     .split(",")
@@ -239,6 +306,29 @@ const wellIds = [...new Set(allIds)].slice(0, MAX_WELLS);
 
 const lithologyQueryUrl = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
 
+function getCustomTitle(){
+    const input = document.getElementById("titleInput");
+    return input && input.value.trim() ? input.value.trim() : "Lithology Report";
+}
+
+function updateReportTitles(){
+    const title = getCustomTitle();
+    const page1Header = document.getElementById("page1HeaderEl");
+    const mapHeader = document.getElementById("mapHeader");
+
+    const n = wellIds.length;
+    const truncatedNote = allIds.length > MAX_WELLS
+        ? ` (first ${MAX_WELLS} of ${new Set(allIds).size} selected)`
+        : "";
+
+    if(page1Header){
+        page1Header.textContent = `${title} - ${n} well${n === 1 ? "" : "s"}${truncatedNote}`;
+    }
+    if(mapHeader){
+        mapHeader.textContent = `${title} - Well Location Map`;
+    }
+}
+
 function getColor(lithology){
     const lith = String(lithology || "").toLowerCase();
 
@@ -246,9 +336,7 @@ function getColor(lithology){
     if(lith.includes("silt")) return "#c2b280";
     if(lith.includes("clay")) return "#a67c52";
     if(lith.includes("gravel")) return "#9e9e9e";
-
     if(lith.includes("till") || lith.includes("diamicton")) return "#b0c4de";
-
     if(
         lith.includes("rock") ||
         lith.includes("bedrock") ||
@@ -280,7 +368,6 @@ async function getLithology(wellId){
         const data = await response.json();
 
         if(!data.features || data.features.length === 0){
-            console.warn("No features found for Well ID:", cleanId);
             return [];
         }
 
@@ -295,15 +382,16 @@ async function getLithology(wellId){
 
 function rowsToIntervals(rows){
     return rows.map(row => {
-        const bottomDepth = Number(row.DEPTH) || 0;
-        const thickness = Number(row.THICKNESS) || 0;
+        const bottomDepth = Number(row.DEPTH || row.Bottom || row.BOTTOM_DEPTH) || 0;
+        const thickness = Number(row.THICKNESS || row.Thick) || 0;
         const topDepth = Math.max(bottomDepth - thickness, 0);
+        const lithology = row.PRIM_LITH || row.LITHOLOGY || row.PRIMARY_LITH || row.LITH || "Unknown";
 
         return {
             topDepth,
             bottomDepth,
             thickness: Math.max(thickness, 1),
-            lithology: row.PRIM_LITH || "Unknown"
+            lithology
         };
     });
 }
@@ -401,12 +489,13 @@ async function loadReport(){
         ...allIntervals.flat().map(i => i.bottomDepth)
     );
 
+    const title = getCustomTitle();
     const truncatedNote = allIds.length > MAX_WELLS
         ? ` (first ${MAX_WELLS} of ${new Set(allIds).size} selected)`
         : "";
 
     page.innerHTML = `
-        <div class="report-header">Lithology Report - ${n} well${n === 1 ? "" : "s"}${truncatedNote}</div>
+        <div class="report-header" id="page1HeaderEl">${title} - ${n} well${n === 1 ? "" : "s"}${truncatedNote}</div>
         <div class="well-grid" id="wellGrid"></div>
         ${createLegend()}
     `;
@@ -425,7 +514,7 @@ async function loadReport(){
 }
 
 // ======================================================
-// PAGE 2: map zoomed to the selected wells
+// PAGE 2: map & index inset map
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
@@ -455,17 +544,15 @@ function showMapMessage(text){
 }
 
 async function loadMapPage(){
-    if(wellIds.length === 0){
-        showMapMessage("No wells selected.");
-        return;
-    }
+    if(wellIds.length === 0) return;
 
     if(!WELLS_LAYER_URL || WELLS_LAYER_URL.startsWith("PASTE_")){
-        showMapMessage("Map not generated: set WELLS_LAYER_URL in Report.html.");
+        showMapMessage("Map not generated: set WELLS_LAYER_URL.");
         return;
     }
 
     let view = null;
+    let indexView = null;
 
     try {
         const {
@@ -487,10 +574,11 @@ async function loadMapPage(){
         const features = result.features.filter(f => f.geometry);
 
         if(features.length === 0){
-            showMapMessage("Map not generated: no matching wells were found in the wells layer.");
+            showMapMessage("Map not generated: no matching wells were found.");
             return;
         }
 
+        // --- 1. Main Map Setup ---
         const graphicsLayer = new GraphicsLayer();
 
         features.forEach(f => {
@@ -554,34 +642,99 @@ async function loadMapPage(){
             ui: { components: [] }
         });
 
-        await view.when();
+        // --- 2. Index / Locator Map Setup (10x Area Scale) ---
+        const indexGraphicsLayer = new GraphicsLayer();
+
+        features.forEach(f => {
+            indexGraphicsLayer.add(new Graphic({
+                geometry: f.geometry,
+                symbol: {
+                    type: "simple-marker",
+                    style: "circle",
+                    color: [255, 255, 0, 1],
+                    size: 8,
+                    outline: { color: [0, 0, 0, 1], width: 1 }
+                }
+            }));
+        });
+
+        indexGraphicsLayer.add(new Graphic({
+            geometry: extent,
+            symbol: {
+                type: "simple-fill",
+                color: [255, 0, 0, 0.15],
+                outline: { color: [255, 0, 0, 1], width: 2 }
+            }
+        }));
+
+        const indexScaleFactor = 10;
+        const indexHalfW = halfW * indexScaleFactor;
+        const indexHalfH = halfH * indexScaleFactor;
+
+        const indexExtent = new Extent({
+            xmin: cx - indexHalfW,
+            xmax: cx + indexHalfW,
+            ymin: cy - indexHalfH,
+            ymax: cy + indexHalfH,
+            spatialReference: { wkid: 102100 }
+        });
+
+        const indexMap = new Map({
+            basemap: new Basemap({
+                baseLayers: [ new TileLayer({ url: TOPO_URL }) ]
+            }),
+            layers: [ indexGraphicsLayer ]
+        });
+
+        indexView = new MapView({
+            container: "indexMapView",
+            map: indexMap,
+            constraints: { snapToZoom: false },
+            ui: { components: [] }
+        });
+
+        await Promise.all([ view.when(), indexView.when() ]);
+        
         await view.goTo(extent, { animate: false });
-        await reactiveUtils.whenOnce(() => view.stationary);
-        await reactiveUtils.whenOnce(() => !view.updating);
-        await new Promise(r => setTimeout(r, 700));
+        await indexView.goTo(indexExtent, { animate: false });
+
+        await reactiveUtils.whenOnce(() => view.stationary && indexView.stationary);
+        await reactiveUtils.whenOnce(() => !view.updating && !indexView.updating);
+        await new Promise(r => setTimeout(r, 800));
 
         const shot = await view.takeScreenshot({ format: "jpg", quality: 85 });
+        const indexShot = await indexView.takeScreenshot({ format: "jpg", quality: 85 });
+        
         const scaleText = Math.round(view.scale).toLocaleString();
 
         const img = document.getElementById("mapShot");
         img.src = shot.dataUrl;
         await img.decode();
-
         img.style.display = "block";
         document.getElementById("mapView").style.display = "none";
 
+        const indexImg = document.getElementById("indexMapShot");
+        indexImg.src = indexShot.dataUrl;
+        await indexImg.decode();
+        indexImg.style.display = "block";
+        document.getElementById("indexMapView").style.display = "none";
+
+        document.getElementById("mapHeader").textContent = `${getCustomTitle()} - Well Location Map`;
         document.getElementById("mapCaption").innerHTML =
             `Selected wells (${features.length} of ${wellIds.length}): ${features
                 .map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}<br>` +
             `Approximate scale 1:${scaleText} &nbsp;|&nbsp; Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community`;
 
         view.destroy();
+        indexView.destroy();
         view = null;
+        indexView = null;
 
     } catch (err) {
         console.error("Map page error:", err);
         showMapMessage("Map could not be generated: " + (err && err.message ? err.message : err));
         if(view){ try { view.destroy(); } catch(e){} }
+        if(indexView){ try { indexView.destroy(); } catch(e){} }
     }
 }
 
@@ -605,6 +758,7 @@ function downloadPDF(){
 async function init(){
     const btn = document.getElementById("pdfBtn");
 
+    updateReportTitles();
     await Promise.all([ loadReport(), loadMapPage() ]);
 
     btn.disabled = wellIds.length === 0;
