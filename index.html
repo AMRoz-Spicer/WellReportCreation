@@ -105,7 +105,7 @@ button:disabled {
     background: #fafafa;
     padding: 6px;
     box-sizing: border-box;
-    overflow-y: auto;
+    overflow: hidden; /* Prevent any scroll bars */
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -322,7 +322,7 @@ function getColor(lithology){
 }
 
 // ======================================================
-// CHARTS LOADING WITH DYNAMIC SYMMETRICAL SIZING
+// CHARTS LOADING WITH STRICT FIT & NO SCROLLBARS
 // ======================================================
 async function getLithology(wellId){
     const cleanId = String(wellId).trim();
@@ -390,7 +390,7 @@ function buildCard(wellId, intervals, cardW, chartH, depthForScale){
     intervals.forEach(interval => {
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
-        const showLabel = height > 18;
+        const showLabel = height > 16;
 
         intervalHtml += `
         <div class="interval" style="height:${height}px; background:${color};">
@@ -421,7 +421,7 @@ async function loadReport(){
     const grid = document.getElementById("wellGrid");
 
     if(wellIds.length === 0){
-        grid.innerHTML = "<p style='font-size:11px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters (e.g., <code>?wells=ID1,ID2</code>).</p>";
+        grid.innerHTML = "<p style='font-size:11px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
         return;
     }
 
@@ -430,32 +430,31 @@ async function loadReport(){
 
     const n = wellIds.length;
 
-    // --- Dynamic Symmetrical Sizing Logic ---
-    // Determine optimal columns & rows based on how many wells are selected
+    // Strict column mapping for 1 to 8 wells
     let cols = 4;
     if (n === 1) cols = 1;
     else if (n === 2) cols = 2;
     else if (n === 3) cols = 3;
     else if (n === 4) cols = 4;
     else if (n === 5 || n === 6) cols = 3;
-    else cols = 4; // 7 or 8 wells
+    else cols = 4;
 
     const rows = Math.ceil(n / cols);
 
-    // Available width/height inside the container roughly accounting for padding and gaps
+    // Strict container boundaries to guarantee zero overflow/scrollbars
     const containerW = 672; 
     const containerH = 315;
     const gap = 6;
 
     const cardW = Math.floor((containerW - (cols - 1) * gap) / cols);
-    const chartH = Math.floor((containerH - (rows - 1) * gap - (rows * 22)) / rows);
+    const chartH = Math.floor((containerH - (rows - 1) * gap - (rows * 20)) / rows);
 
     grid.innerHTML = "";
 
     wellIds.forEach((wellId, idx) => {
         const intervals = allIntervals[idx];
         const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-        grid.appendChild(buildCard(wellId, intervals, cardW, Math.max(chartH, 80), ownMax));
+        grid.appendChild(buildCard(wellId, intervals, cardW, Math.max(chartH, 70), ownMax));
     });
 }
 
@@ -678,7 +677,7 @@ async function loadMaps(){
 }
 
 // ======================================================
-// PDF EXPORT (High Quality & Dynamic Filename)
+// PDF EXPORT
 // ======================================================
 function downloadPDF(){
     const rawTitle = getCustomTitle();
