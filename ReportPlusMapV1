@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lithology Report</title>
+
+<link rel="stylesheet" href="https://js.arcgis.com/4.31/esri/themes/light/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://js.arcgis.com/4.31/"></script>
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    margin:20px;
+    background:#f0f0f0;
+}
+
+#controls{
+    margin-bottom:20px;
+}
+
+button{
+    padding:10px 20px;
+    font-size:14px;
+    cursor:pointer;
+}
+
+button:disabled{
+    cursor:wait;
+    opacity:0.6;
+}
+
+/* No margins between pages: keeps PDF pagination exact */
+#report{
+    width:1000px;
+}
+
+/* Each page: 1000 x 750 px maps onto one landscape letter page */
+.pdf-page{
+    box-sizing:border-box;
+    width:1000px;
+    height:750px;
+    padding:16px;
+    background:white;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+}
+
+.report-header{
+    height:26px;
+    font-size:15px;
+    font-weight:bold;
+    flex:none;
+}
+
+/* ---------- Page 1: charts ---------- */
+.well-grid{
+    flex:1;
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    align-content:flex-start;
+}
+
+.well-card{
+    box-sizing:border-box;
+    border:1px solid #bbb;
+    padding:6px 8px;
+    background:white;
+}
+
+.well-title{
+    height:18px;
+    margin-bottom:4px;
+    font-size:12px;
+    font-weight:bold;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.no-data{
+    font-size:11px;
+    color:#555;
+}
+
+.profile-wrap{
+    display:flex;
+    gap:4px;
+}
+
+.depth-axis{
+    position:relative;
+    box-sizing:border-box;
+    width:42px;
+    font-size:9px;
+    text-align:right;
+    padding-right:4px;
+    border-right:1px solid #777;
+}
+
+.depth-axis span{
+    position:absolute;
+    right:4px;
+    white-space:nowrap;
+}
+
+.log-column{
+    flex:1;
+    box-sizing:border-box;
+    border:1px solid #333;
+    background:#f0f0f0;
+    overflow:hidden;
+}
+
+.interval{
+    box-sizing:border-box;
+    border-bottom:1px solid #444;
+    padding:1px 3px;
+    font-size:9px;
+    line-height:1.1;
+    overflow:hidden;
+    color:#111;
+}
+
+.legend{
+    height:30px;
+    flex:none;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:4px 14px;
+    font-size:10px;
+    border-top:1px solid #ccc;
+    padding-top:4px;
+}
+
+.legend-item{
+    display:flex;
+    align-items:center;
+    gap:4px;
+}
+
+.swatch{
+    width:11px;
+    height:11px;
+    border:1px solid #444;
+    display:inline-block;
+}
+
+/* ---------- Page 2: map ---------- */
+#mapWrap{
+    flex:1;
+    position:relative;
+    border:1px solid #888;
+    background:#e8e8e8;
+}
+
+#mapView, #mapShot{
+    position:absolute;
+    top:0;
+    left:0;
+    right:0;
+    bottom:0;
+    width:100%;
+    height:100%;
+}
+
+#mapShot{
+    display:none;
+}
+
+.map-message{
+    padding:12px;
+    font-size:12px;
+    color:#a00;
+}
+
+.map-caption{
+    height:30px;
+    flex:none;
+    font-size:10px;
+    padding-top:4px;
+    line-height:1.3;
+    overflow:hidden;
+}
+</style>
+</head>
+
+<body>
+
+<div id="controls">
+    <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
+</div>
+
+<div id="report">
+    <div class="pdf-page" id="page1"></div>
+    <div class="pdf-page page-two" id="page2">
+        <div class="report-header" id="mapHeader">Well Location Map</div>
+        <div id="mapWrap">
+            <div id="mapView"></div>
+            <img id="mapShot" alt="Map of selected wells">
+        </div>
+        <div class="map-caption" id="mapCaption"></div>
+    </div>
+</div>
+
+<script>
+// ---------- Settings ----------
+const MAX_WELLS = 10;
+const COMMON_SCALE = false;   // true = all wells drawn on the same depth scale
+
+// >>> FILL THIS IN: REST URL of your wells point layer <<<
+const WELLS_LAYER_URL = "PASTE_YOUR_WELLS_LAYER_URL_HERE";
+const WELLS_ID_FIELD  = "WELLID";
+
+// Aerial imagery (public tile service, no API key needed)
+const IMAGERY_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer";
+
+// Minimum map width in meters, so a single well doesn't zoom in absurdly far
+const MIN_MAP_SPAN_M = 600;
+
+// Layout constants (page 1)
+const REPORT_H = 750;
+const REPORT_W = 1000;
+const PAD = 16;
+const HEADER_H = 26;
+const LEGEND_H = 30;
+const GAP = 12;
+const CARD_OVERHEAD = 44;     // title + card padding + borders
+
+// ---------- URL parameters ----------
+const params = new URLSearchParams(window.location.search);
+const wellsParam = params.get("wells") || params.get("well") || "";
+
+const allIds = wellsParam
+    .split(",")
+    .map(id => id.trim())
+    .filter(id => id.length > 0);
+
+const wellIds = [...new Set(allIds)].slice(0, MAX_WELLS);
+
+const lithologyQueryUrl =
+"https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
+
+function getColor(lithology){
+    const lith = String(lithology || "").toLowerCase();
+
+    if(lith.includes("sand")) return "#f4d03f";
+    if(lith.includes("silt")) return "#c2b280";
+    if(lith.includes("clay")) return "#a67c52";
+    if(lith.includes("gravel")) return "#9e9e9e";
+
+    if(lith.includes("till") || lith.includes("diamicton")) return "#b0c4de";
+
+    if(
+        lith.includes("rock") ||
+        lith.includes("bedrock") ||
+        lith.includes("limestone") ||
+        lith.includes("shale") ||
+        lith.includes("dolomite")
+    ) return "#95a5a6";
+
+    return "#d5d8dc";
+}
+
+// ======================================================
+// PAGE 1: lithology charts
+// ======================================================
+async function getLithology(wellId){
+    const cleanId = String(wellId).trim();
+    const whereClause = `WELLID='${cleanId.replaceAll("'","''")}'`;
+
+    const queryParams = new URLSearchParams({
+        f: "json",
+        where: whereClause,
+        outFields: "*",
+        returnGeometry: "false",
+        orderByFields: "SEQ_NUM"
+    });
+
+    try {
+        const response = await fetch(`${lithologyQueryUrl}?${queryParams}`);
+        const data = await response.json();
+
+        if(!data.features || data.features.length === 0){
+            console.warn("No features found for Well ID:", cleanId);
+            return [];
+        }
+
+        return data.features
+            .map(f => f.attributes)
+            .sort((a,b) => Number(a.SEQ_NUM) - Number(b.SEQ_NUM));
+    } catch (err) {
+        console.error("Error fetching lithology data for well " + cleanId, err);
+        return [];
+    }
+}
+
+function rowsToIntervals(rows){
+    return rows.map(row => {
+        const bottomDepth = Number(row.DEPTH) || 0;
+        const thickness = Number(row.THICKNESS) || 0;
+        const topDepth = Math.max(bottomDepth - thickness, 0);
+
+        return {
+            topDepth,
+            bottomDepth,
+            thickness: Math.max(thickness, 1),
+            lithology: row.PRIM_LITH || "Unknown"
+        };
+    });
+}
+
+function createLegend(){
+    const items = [
+        ["#f4d03f", "Sand"],
+        ["#c2b280", "Silt"],
+        ["#a67c52", "Clay"],
+        ["#9e9e9e", "Gravel"],
+        ["#b0c4de", "Till / Diamicton"],
+        ["#95a5a6", "Rock / Bedrock"],
+        ["#d5d8dc", "Other"]
+    ];
+
+    return `
+    <div class="legend">
+        ${items.map(([color, label]) =>
+            `<div class="legend-item"><span class="swatch" style="background:${color}"></span>${label}</div>`
+        ).join("")}
+    </div>`;
+}
+
+function buildCard(wellId, intervals, cardW, chartH, depthForScale){
+    const card = document.createElement("div");
+    card.className = "well-card";
+    card.style.width = cardW + "px";
+
+    if(!intervals || intervals.length === 0){
+        card.innerHTML = `
+            <div class="well-title">Well ${wellId}</div>
+            <div class="no-data">No lithology data found for this ID.</div>`;
+        return card;
+    }
+
+    const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
+    const scale = depthForScale > 0 ? chartH / depthForScale : 1;
+    const columnHeight = Math.max(Math.round(maxDepth * scale), 10);
+
+    let intervalHtml = "";
+
+    intervals.forEach(interval => {
+        const height = interval.thickness * scale;
+        const color = getColor(interval.lithology);
+        const showLabel = height > 24;
+
+        intervalHtml += `
+        <div class="interval" style="height:${height}px; background:${color};">
+            ${
+                showLabel
+                ? `<strong>${interval.topDepth}-${interval.bottomDepth} ft</strong><br>${interval.lithology}`
+                : ""
+            }
+        </div>`;
+    });
+
+    card.innerHTML = `
+        <div class="well-title">Well ${wellId}</div>
+        <div class="profile-wrap">
+            <div class="depth-axis" style="height:${columnHeight}px">
+                <span style="top:0">0 ft</span>
+                <span style="top:${Math.max(columnHeight - 11, 12)}px">${maxDepth} ft</span>
+            </div>
+            <div class="log-column" style="height:${columnHeight}px">
+                ${intervalHtml}
+            </div>
+        </div>`;
+
+    return card;
+}
+
+async function loadReport(){
+    const page = document.getElementById("page1");
+
+    if(wellIds.length === 0){
+        page.innerHTML = "<p><strong>Error:</strong> No Well ID provided in the URL parameters (e.g., <code>?wells=ID1,ID2</code>).</p>";
+        return;
+    }
+
+    page.innerHTML = "<p>Loading wells...</p>";
+
+    // Fetch all wells in parallel; results stay in the same order as wellIds
+    const allRows = await Promise.all(wellIds.map(getLithology));
+    const allIntervals = allRows.map(rowsToIntervals);
+
+    // Grid layout: up to 5 across in one row, 6-10 wells split over two rows
+    const n = wellIds.length;
+    const cols = n <= 5 ? n : Math.ceil(n / 2);
+    const rows = Math.ceil(n / cols);
+
+    const cardW = Math.min(300, Math.floor((REPORT_W - 2 * PAD - (cols - 1) * GAP) / cols));
+    const availableH = REPORT_H - 2 * PAD - HEADER_H - LEGEND_H - (rows - 1) * GAP;
+    const chartH = Math.max(120, Math.min(450, Math.floor(availableH / rows - CARD_OVERHEAD)));
+
+    const globalMax = Math.max(
+        1,
+        ...allIntervals.flat().map(i => i.bottomDepth)
+    );
+
+    const truncatedNote = allIds.length > MAX_WELLS
+        ? ` (first ${MAX_WELLS} of ${new Set(allIds).size} selected)`
+        : "";
+
+    page.innerHTML = `
+        <div class="report-header">Lithology Report - ${n} well${n === 1 ? "" : "s"}${truncatedNote}</div>
+        <div class="well-grid" id="wellGrid"></div>
+        ${createLegend()}
+    `;
+
+    const grid = document.getElementById("wellGrid");
+
+    wellIds.forEach((wellId, idx) => {
+        const intervals = allIntervals[idx];
+        const ownMax = intervals.length
+            ? Math.max(...intervals.map(i => i.bottomDepth))
+            : 0;
+
+        const depthForScale = COMMON_SCALE ? globalMax : ownMax;
+        grid.appendChild(buildCard(wellId, intervals, cardW, chartH, depthForScale));
+    });
+}
+
+// ======================================================
+// PAGE 2: map zoomed to the selected wells
+// ======================================================
+function loadArcGIS(){
+    return new Promise((resolve, reject) => {
+        if(typeof require !== "function"){
+            reject(new Error("ArcGIS Maps SDK did not load."));
+            return;
+        }
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/Basemap",
+            "esri/layers/TileLayer",
+            "esri/layers/GraphicsLayer",
+            "esri/Graphic",
+            "esri/geometry/Extent",
+            "esri/rest/query",
+            "esri/core/reactiveUtils"
+        ], (Map, MapView, Basemap, TileLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils) => {
+            resolve({ Map, MapView, Basemap, TileLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils });
+        });
+    });
+}
+
+function showMapMessage(text){
+    const wrap = document.getElementById("mapWrap");
+    wrap.innerHTML = `<div class="map-message">${text}</div>`;
+}
+
+async function loadMapPage(){
+    if(wellIds.length === 0){
+        showMapMessage("No wells selected.");
+        return;
+    }
+
+    if(!WELLS_LAYER_URL || WELLS_LAYER_URL.startsWith("PASTE_")){
+        showMapMessage("Map not generated: set WELLS_LAYER_URL in Report.html.");
+        return;
+    }
+
+    let view = null;
+
+    try {
+        const {
+            Map, MapView, Basemap, TileLayer, GraphicsLayer,
+            Graphic, Extent, query, reactiveUtils
+        } = await loadArcGIS();
+
+        // 1. Find the selected wells
+        const where = `${WELLS_ID_FIELD} IN (${wellIds
+            .map(id => `'${String(id).replaceAll("'", "''")}'`)
+            .join(",")})`;
+
+        const result = await query.executeQueryJSON(WELLS_LAYER_URL, {
+            where,
+            outFields: [WELLS_ID_FIELD],
+            returnGeometry: true,
+            outSpatialReference: { wkid: 102100 }
+        });
+
+        const features = result.features.filter(f => f.geometry);
+
+        if(features.length === 0){
+            showMapMessage("Map not generated: no matching wells were found in the wells layer.");
+            return;
+        }
+
+        // 2. Draw the wells with ID labels
+        const graphicsLayer = new GraphicsLayer();
+
+        features.forEach(f => {
+            const id = f.attributes[WELLS_ID_FIELD];
+
+            graphicsLayer.add(new Graphic({
+                geometry: f.geometry,
+                symbol: {
+                    type: "simple-marker",
+                    style: "circle",
+                    color: [230, 30, 30, 1],
+                    size: 12,
+                    outline: { color: [255, 255, 255, 1], width: 2 }
+                }
+            }));
+
+            graphicsLayer.add(new Graphic({
+                geometry: f.geometry,
+                symbol: {
+                    type: "text",
+                    text: String(id),
+                    color: [255, 255, 255, 1],
+                    haloColor: [0, 0, 0, 1],
+                    haloSize: "2px",
+                    yoffset: 12,
+                    font: { size: 11, weight: "bold" }
+                }
+            }));
+        });
+
+        // 3. Extent around the wells, with a minimum size
+        const xs = features.map(f => f.geometry.x);
+        const ys = features.map(f => f.geometry.y);
+
+        let xmin = Math.min(...xs), xmax = Math.max(...xs);
+        let ymin = Math.min(...ys), ymax = Math.max(...ys);
+
+        const cx = (xmin + xmax) / 2;
+        const cy = (ymin + ymax) / 2;
+        const halfW = Math.max((xmax - xmin) / 2 * 1.4, MIN_MAP_SPAN_M / 2);
+        const halfH = Math.max((ymax - ymin) / 2 * 1.4, MIN_MAP_SPAN_M / 2);
+
+        const extent = new Extent({
+            xmin: cx - halfW,
+            xmax: cx + halfW,
+            ymin: cy - halfH,
+            ymax: cy + halfH,
+            spatialReference: { wkid: 102100 }
+        });
+
+        // 4. Build the map on page 2
+        const map = new Map({
+            basemap: new Basemap({
+                baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
+            }),
+            layers: [ graphicsLayer ]
+        });
+
+        view = new MapView({
+            container: "mapView",
+            map,
+            constraints: { snapToZoom: false },
+            ui: { components: [] }
+        });
+
+        await view.when();
+        await view.goTo(extent, { animate: false });
+        await reactiveUtils.whenOnce(() => view.stationary);
+        await reactiveUtils.whenOnce(() => !view.updating);
+        await new Promise(r => setTimeout(r, 700));   // let the last tiles finish drawing
+
+        // 5. Screenshot the map and swap it in for the live view
+        const shot = await view.takeScreenshot({ format: "jpg", quality: 85 });
+        const scaleText = Math.round(view.scale).toLocaleString();
+
+        const img = document.getElementById("mapShot");
+        img.src = shot.dataUrl;
+        await img.decode();
+
+        img.style.display = "block";
+        document.getElementById("mapView").style.display = "none";
+
+        document.getElementById("mapCaption").innerHTML =
+            `Selected wells (${features.length} of ${wellIds.length}): ${features
+                .map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}<br>` +
+            `Approximate scale 1:${scaleText} &nbsp;|&nbsp; Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community`;
+
+        view.destroy();
+        view = null;
+
+    } catch (err) {
+        console.error("Map page error:", err);
+        showMapMessage("Map could not be generated: " + (err && err.message ? err.message : err));
+        if(view){ try { view.destroy(); } catch(e){} }
+    }
+}
+
+// ======================================================
+// PDF
+// ======================================================
+function downloadPDF(){
+    html2pdf()
+        .set({
+            margin: 0.3,
+            filename: "Lithology_Report.pdf",
+            image: { type: "jpeg", quality: 0.9 },
+            html2canvas: { scale: 1.5, backgroundColor: "#ffffff", scrollY: 0, useCORS: true },
+            jsPDF: { unit: "in", format: "letter", orientation: "landscape" },
+            pagebreak: { mode: ["css"], before: ".page-two" }
+        })
+        .from(document.getElementById("report"))
+        .save();
+}
+
+async function init(){
+    const btn = document.getElementById("pdfBtn");
+
+    await Promise.all([ loadReport(), loadMapPage() ]);
+
+    btn.disabled = wellIds.length === 0;
+    btn.textContent = "Download PDF";
+}
+
+init();
+</script>
+
+</body>
+</html>
