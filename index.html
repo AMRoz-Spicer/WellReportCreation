@@ -118,11 +118,11 @@ button:disabled {
     flex: 1;
     border: 1px solid #bbb;
     background: #fafafa;
-    padding: 4px;
+    padding: 3px;
     box-sizing: border-box;
     overflow: hidden;
     display: grid;
-    gap: 4px;
+    gap: 3px;
     align-content: stretch;
     justify-content: stretch;
 }
@@ -188,9 +188,9 @@ button:disabled {
 .well-card {
     box-sizing: border-box;
     border: 1px solid #bbb;
-    padding: 2px 3px;
+    padding: 2px;
     background: white;
-    font-size: 7.5px;
+    font-size: 7px;
     width: 100%;
     height: 100%;
     display: flex;
@@ -199,9 +199,9 @@ button:disabled {
 }
 
 .well-title {
-    height: 11px;
+    height: 10px;
     margin-bottom: 1px;
-    font-size: 8px;
+    font-size: 7.5px;
     font-weight: bold;
     white-space: nowrap;
     overflow: hidden;
@@ -210,7 +210,7 @@ button:disabled {
 }
 
 .no-data {
-    font-size: 7.5px;
+    font-size: 7px;
     color: #555;
 }
 
@@ -224,8 +224,8 @@ button:disabled {
 .depth-axis {
     position: relative;
     box-sizing: border-box;
-    width: 24px;
-    font-size: 6px;
+    width: 22px;
+    font-size: 5.5px;
     text-align: right;
     padding-right: 2px;
     border-right: 1px solid #777;
@@ -252,7 +252,7 @@ button:disabled {
     box-sizing: border-box;
     border-bottom: 1px solid #444;
     padding: 1px 2px;
-    font-size: 6px;
+    font-size: 5.5px;
     line-height: 1;
     overflow: hidden;
     color: #111;
@@ -320,7 +320,6 @@ function updateReportTitles(){
     const title = getCustomTitle();
     document.title = "FinalV1 - " + title;
     
-    // Update all page headers dynamically
     uniqueWellIds.forEach((_, pageIdx) => {
         const headerEl = document.getElementById(`pageHeaderEl_${pageIdx}`);
         const start = pageIdx * WELLS_PER_PAGE + 1;
@@ -434,7 +433,7 @@ function buildCard(wellId, intervals, chartH, depthForScale){
     intervals.forEach(interval => {
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
-        const showLabel = height > 10;
+        const showLabel = height > 9;
 
         intervalHtml += `
         <div class="interval" style="height:${height}px; background:${color};">
@@ -451,7 +450,7 @@ function buildCard(wellId, intervals, chartH, depthForScale){
         <div class="profile-wrap">
             <div class="depth-axis" style="height:${columnHeight}px">
                 <span style="top:0">0ft</span>
-                <span style="top:${Math.max(columnHeight - 7, 4)}px">${maxDepth}ft</span>
+                <span style="top:${Math.max(columnHeight - 6, 4)}px">${maxDepth}ft</span>
             </div>
             <div class="log-column" style="height:${columnHeight}px">
                 ${intervalHtml}
@@ -664,7 +663,7 @@ async function initReport(){
     const btn = document.getElementById("pdfBtn");
 
     if(uniqueWellIds.length === 0){
-        reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters (e.g., <code>?wells=ID1,ID2</code>).</p>";
+        reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
         return;
     }
 
@@ -724,7 +723,6 @@ async function initReport(){
         const start = pageIdx * WELLS_PER_PAGE;
         const pageWellIds = uniqueWellIds.slice(start, start + WELLS_PER_PAGE);
 
-        // Fetch lithology and build charts for this page
         const pageRows = await Promise.all(pageWellIds.map(getLithology));
         const pageIntervals = pageRows.map(rowsToIntervals);
 
@@ -745,14 +743,15 @@ async function initReport(){
         grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
         grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 
-        const totalContainerH = 370;
-        const chartH = Math.floor((totalContainerH - (rows - 1) * 4 - rows * 16) / rows);
+        // Slightly tightened height budget to guarantee zero clipping at the bottom
+        const totalContainerH = 345;
+        const chartH = Math.floor((totalContainerH - (rows - 1) * 3 - rows * 14) / rows);
 
         grid.innerHTML = "";
         pageWellIds.forEach((wellId, idx) => {
             const intervals = pageIntervals[idx];
             const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-            grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 30), ownMax));
+            grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 25), ownMax));
         });
 
         // Render page maps
