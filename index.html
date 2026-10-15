@@ -63,9 +63,12 @@ button:disabled {
     opacity: 0.6;
 }
 
-/* Single Page Dashboard Layout (Strict 1000x750px) */
+/* Multi-Page Report Container */
 #report {
     width: 1000px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
 }
 
 .pdf-page {
@@ -78,6 +81,9 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    page-break-after: always;
+    break-after: page;
+    position: relative;
 }
 
 .report-header {
@@ -165,7 +171,7 @@ button:disabled {
     box-sizing: border-box;
 }
 
-#mapView, #mapShot, #indexMapView, #indexMapShot {
+.map-view-div, .map-shot-img {
     position: absolute;
     top: 0;
     left: 0;
@@ -175,7 +181,7 @@ button:disabled {
     height: 100%;
 }
 
-#mapShot, #indexMapShot {
+.map-shot-img {
     display: none;
 }
 
@@ -272,38 +278,12 @@ button:disabled {
 </div>
 
 <div id="report">
-    <div class="pdf-page" id="page1">
-        <!-- 1. Title Block -->
-        <div class="report-header" id="pageHeaderEl">Lithology Report</div>
-
-        <!-- 2. Middle Row: Dynamic Charts & Legend (Left) & Index Map (Right) -->
-        <div class="middle-row">
-            <div class="charts-column">
-                <div class="charts-container" id="wellGrid">
-                    <p style="font-size:10px; color:#555; padding:6px;">Loading wells...</p>
-                </div>
-                <div class="legend-box" id="legendBox"></div>
-            </div>
-            <div class="index-map-wrapper">
-                <div id="indexMapView"></div>
-                <img id="indexMapShot" alt="Index map inset">
-            </div>
-        </div>
-
-        <!-- 3. Bottom Row: Main Well Map -->
-        <div class="bottom-map-wrapper">
-            <div id="mapView"></div>
-            <img id="mapShot" alt="Well location map">
-        </div>
-
-        <div class="map-caption" id="mapCaption">Loading map data...</div>
-    </div>
+    <!-- Pages will be dynamically injected here -->
 </div>
 
 <script>
 // ---------- Settings ----------
-const MAX_WELLS = 8;
-const COMMON_SCALE = false;
+const WELLS_PER_PAGE = 8;
 
 const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
 const WELLS_ID_FIELD  = "WELLID";
@@ -326,7 +306,8 @@ const allIds = wellsParam
     .map(id => id.trim())
     .filter(id => id.length > 0);
 
-const wellIds = [...new Set(allIds)].slice(0, MAX_WELLS);
+const uniqueWellIds = [...new Set(allIds)];
+const totalPages = Math.max(Math.ceil(uniqueWellIds.length / WELLS_PER_PAGE), 1);
 
 const lithologyQueryUrl = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
 
@@ -339,15 +320,15 @@ function updateReportTitles(){
     const title = getCustomTitle();
     document.title = "FinalV1 - " + title;
     
-    const headerEl = document.getElementById("pageHeaderEl");
-    const n = wellIds.length;
-    const truncatedNote = allIds.length > MAX_WELLS
-        ? ` (first ${MAX_WELLS} of ${new Set(allIds).size} selected)`
-        : "";
-
-    if(headerEl){
-        headerEl.textContent = `${title} - Dashboard (${n} well${n === 1 ? "" : "s"}${truncatedNote})`;
-    }
+    // Update all page headers dynamically
+    uniqueWellIds.forEach((_, pageIdx) => {
+        const headerEl = document.getElementById(`pageHeaderEl_${pageIdx}`);
+        const start = pageIdx * WELLS_PER_PAGE + 1;
+        const end = Math.min((pageIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.length);
+        if(headerEl){
+            headerEl.textContent = `${title} - Dashboard (Wells ${start}-${end} of ${uniqueWellIds.length}) [Page ${pageIdx + 1} of ${totalPages}]`;
+        }
+    });
 }
 
 function getColor(lithology){
@@ -386,7 +367,7 @@ function buildLegend(){
 }
 
 // ======================================================
-// CHARTS LOADING WITH CSS GRID
+// DATA FETCHING
 // ======================================================
 async function getLithology(wellId){
     const cleanId = String(wellId).trim();
@@ -480,50 +461,8 @@ function buildCard(wellId, intervals, chartH, depthForScale){
     return card;
 }
 
-async function loadReport(){
-    const grid = document.getElementById("wellGrid");
-    const legendBox = document.getElementById("legendBox");
-    legendBox.innerHTML = buildLegend();
-
-    if(wellIds.length === 0){
-        grid.innerHTML = "<p style='font-size:10px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
-        return;
-    }
-
-    const allRows = await Promise.all(wellIds.map(getLithology));
-    const allIntervals = allRows.map(rowsToIntervals);
-
-    const n = wellIds.length;
-
-    // --- Exact User-Defined Grid Mapping (1 to 8 Wells) ---
-    let cols = 1;
-    let rows = 1;
-
-    if (n === 1) { cols = 1; rows = 1; }
-    else if (n === 2) { cols = 2; rows = 1; }
-    else if (n === 3) { cols = 3; rows = 1; }
-    else if (n === 4) { cols = 2; rows = 2; }
-    else if (n === 5 || n === 6) { cols = 3; rows = 2; }
-    else if (n === 7 || n === 8) { cols = 4; rows = 2; }
-
-    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-
-    // Approximate available chart height per row inside the grid cell
-    const totalContainerH = 370;
-    const chartH = Math.floor((totalContainerH - (rows - 1) * 4 - rows * 16) / rows);
-
-    grid.innerHTML = "";
-
-    wellIds.forEach((wellId, idx) => {
-        const intervals = allIntervals[idx];
-        const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-        grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 30), ownMax));
-    });
-}
-
 // ======================================================
-// MAPS LOADING (Main Map & Index Map)
+// ARCGIS MAPS & SDK
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
@@ -547,20 +486,19 @@ function loadArcGIS(){
     });
 }
 
-function showMapMessage(text){
-    document.getElementById("bottom-map-wrapper").innerHTML = `<div style="padding:12px; font-size:11px; color:#a00;">${text}</div>`;
-}
+async function renderPageMap(pageIdx, pageWellIds, allFeatures){
+    const viewDivId = `mapView_${pageIdx}`;
+    const indexViewDivId = `indexMapView_${pageIdx}`;
+    const shotImgId = `mapShot_${pageIdx}`;
+    const indexShotImgId = `indexMapShot_${pageIdx}`;
+    const captionId = `mapCaption_${pageIdx}`;
 
-async function loadMaps(){
-    if(wellIds.length === 0) return;
+    const pageFeatures = allFeatures.filter(f => pageWellIds.includes(String(f.attributes[WELLS_ID_FIELD])));
 
-    if(!WELLS_LAYER_URL || WELLS_LAYER_URL.startsWith("PASTE_")){
-        showMapMessage("Map not generated: set WELLS_LAYER_URL.");
+    if(pageFeatures.length === 0){
+        document.getElementById(captionId).textContent = "No matching well locations for this page.";
         return;
     }
-
-    let view = null;
-    let indexView = null;
 
     try {
         const {
@@ -568,28 +506,10 @@ async function loadMaps(){
             Graphic, Extent, query, reactiveUtils
         } = await loadArcGIS();
 
-        const where = `${WELLS_ID_FIELD} IN (${wellIds
-            .map(id => `'${String(id).replaceAll("'", "''")}'`)
-            .join(",")})`;
-
-        const result = await query.executeQueryJSON(WELLS_LAYER_URL, {
-            where,
-            outFields: [WELLS_ID_FIELD],
-            returnGeometry: true,
-            outSpatialReference: { wkid: 102100 }
-        });
-
-        const features = result.features.filter(f => f.geometry);
-
-        if(features.length === 0){
-            showMapMessage("No matching wells found in layer.");
-            return;
-        }
-
-        // --- 1. Main Map Setup ---
+        // --- 1. Page Main Map ---
         const graphicsLayer = new GraphicsLayer();
 
-        features.forEach(f => {
+        pageFeatures.forEach(f => {
             const id = f.attributes[WELLS_ID_FIELD];
 
             graphicsLayer.add(new Graphic({
@@ -617,8 +537,8 @@ async function loadMaps(){
             }));
         });
 
-        const xs = features.map(f => f.geometry.x);
-        const ys = features.map(f => f.geometry.y);
+        const xs = pageFeatures.map(f => f.geometry.x);
+        const ys = pageFeatures.map(f => f.geometry.y);
 
         let xmin = Math.min(...xs), xmax = Math.max(...xs);
         let ymin = Math.min(...ys), ymax = Math.max(...ys);
@@ -643,17 +563,17 @@ async function loadMaps(){
             layers: [ graphicsLayer ]
         });
 
-        view = new MapView({
-            container: "mapView",
+        const view = new MapView({
+            container: viewDivId,
             map,
             constraints: { snapToZoom: false },
             ui: { components: [] }
         });
 
-        // --- 2. Index Map Setup (10x Area Scale) ---
+        // --- 2. Page Index Map ---
         const indexGraphicsLayer = new GraphicsLayer();
 
-        features.forEach(f => {
+        pageFeatures.forEach(f => {
             indexGraphicsLayer.add(new Graphic({
                 geometry: f.geometry,
                 symbol: {
@@ -691,8 +611,8 @@ async function loadMaps(){
             layers: [ indexGraphicsLayer ]
         });
 
-        indexView = new MapView({
-            container: "indexMapView",
+        const indexView = new MapView({
+            container: indexViewDivId,
             map: indexMap,
             constraints: { snapToZoom: false },
             ui: { components: [] }
@@ -705,39 +625,142 @@ async function loadMaps(){
 
         await reactiveUtils.whenOnce(() => view.stationary && indexView.stationary);
         await reactiveUtils.whenOnce(() => !view.updating && !indexView.updating);
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
 
         const shot = await view.takeScreenshot({ format: "jpg", quality: 100 });
         const indexShot = await indexView.takeScreenshot({ format: "jpg", quality: 100 });
         
         const scaleText = Math.round(view.scale).toLocaleString();
 
-        const img = document.getElementById("mapShot");
+        const img = document.getElementById(shotImgId);
         img.src = shot.dataUrl;
         await img.decode();
         img.style.display = "block";
-        document.getElementById("mapView").style.display = "none";
+        document.getElementById(viewDivId).style.display = "none";
 
-        const indexImg = document.getElementById("indexMapShot");
+        const indexImg = document.getElementById(indexShotImgId);
         indexImg.src = indexShot.dataUrl;
         await indexImg.decode();
         indexImg.style.display = "block";
-        document.getElementById("indexMapView").style.display = "none";
+        document.getElementById(indexViewDivId).style.display = "none";
 
-        document.getElementById("mapCaption").innerHTML =
-            `Selected wells (${features.length} of ${wellIds.length}): ${features.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${scaleText} | Imagery: Esri, Maxar, Earthstar Geographics`;
+        document.getElementById(captionId).innerHTML =
+            `Wells on Page ${pageIdx + 1} (${pageFeatures.length}): ${pageFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${scaleText} | Imagery: Esri, Maxar, Earthstar Geographics`;
 
         view.destroy();
         indexView.destroy();
-        view = null;
-        indexView = null;
 
     } catch (err) {
-        console.error("Map generation error:", err);
-        showMapMessage("Map error: " + err.message);
-        if(view){ try { view.destroy(); } catch(e){} }
-        if(indexView){ try { indexView.destroy(); } catch(e){} }
+        console.error("Map generation error on page " + pageIdx, err);
+        document.getElementById(captionId).textContent = "Map error: " + err.message;
     }
+}
+
+// ======================================================
+// MAIN BUILD INITIALIZER
+// ======================================================
+async function initReport(){
+    const reportContainer = document.getElementById("report");
+    const btn = document.getElementById("pdfBtn");
+
+    if(uniqueWellIds.length === 0){
+        reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters (e.g., <code>?wells=ID1,ID2</code>).</p>";
+        return;
+    }
+
+    reportContainer.innerHTML = "";
+
+    // 1. Build Page DOM Skeletons
+    for(let pageIdx = 0; pageIdx < totalPages; pageIdx++){
+        const pageDiv = document.createElement("div");
+        pageDiv.className = "pdf-page";
+        pageDiv.id = `page_${pageIdx}`;
+        pageDiv.innerHTML = `
+            <div class="report-header" id="pageHeaderEl_${pageIdx}">Lithology Report</div>
+            <div class="middle-row">
+                <div class="charts-column">
+                    <div class="charts-container" id="wellGrid_${pageIdx}">
+                        <p style="font-size:10px; color:#555; padding:6px;">Loading charts...</p>
+                    </div>
+                    <div class="legend-box">${buildLegend()}</div>
+                </div>
+                <div class="index-map-wrapper">
+                    <div class="map-view-div" id="indexMapView_${pageIdx}"></div>
+                    <img class="map-shot-img" id="indexMapShot_${pageIdx}" alt="Index map inset">
+                </div>
+            </div>
+            <div class="bottom-map-wrapper">
+                <div class="map-view-div" id="mapView_${pageIdx}"></div>
+                <img class="map-shot-img" id="mapShot_${pageIdx}" alt="Well location map">
+            </div>
+            <div class="map-caption" id="mapCaption_${pageIdx}">Loading map data...</div>
+        `;
+        reportContainer.appendChild(pageDiv);
+    }
+
+    updateReportTitles();
+
+    // 2. Fetch all feature geometries upfront for map rendering
+    let allFeatures = [];
+    try {
+        const { query } = await loadArcGIS();
+        const where = `${WELLS_ID_FIELD} IN (${uniqueWellIds
+            .map(id => `'${String(id).replaceAll("'", "''")}'`)
+            .join(",")})`;
+
+        const result = await query.executeQueryJSON(WELLS_LAYER_URL, {
+            where,
+            outFields: [WELLS_ID_FIELD],
+            returnGeometry: true,
+            outSpatialReference: { wkid: 102100 }
+        });
+        allFeatures = result.features || [];
+    } catch (err) {
+        console.error("Error fetching map geometries:", err);
+    }
+
+    // 3. Populate each page's charts and maps
+    for(let pageIdx = 0; pageIdx < totalPages; pageIdx++){
+        const start = pageIdx * WELLS_PER_PAGE;
+        const pageWellIds = uniqueWellIds.slice(start, start + WELLS_PER_PAGE);
+
+        // Fetch lithology and build charts for this page
+        const pageRows = await Promise.all(pageWellIds.map(getLithology));
+        const pageIntervals = pageRows.map(rowsToIntervals);
+
+        const grid = document.getElementById(`wellGrid_${pageIdx}`);
+        const n = pageWellIds.length;
+
+        // Exact User-Defined Grid Mapping per page
+        let cols = 1;
+        let rows = 1;
+
+        if (n === 1) { cols = 1; rows = 1; }
+        else if (n === 2) { cols = 2; rows = 1; }
+        else if (n === 3) { cols = 3; rows = 1; }
+        else if (n === 4) { cols = 2; rows = 2; }
+        else if (n === 5 || n === 6) { cols = 3; rows = 2; }
+        else if (n === 7 || n === 8) { cols = 4; rows = 2; }
+
+        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+        const totalContainerH = 370;
+        const chartH = Math.floor((totalContainerH - (rows - 1) * 4 - rows * 16) / rows);
+
+        grid.innerHTML = "";
+        pageWellIds.forEach((wellId, idx) => {
+            const intervals = pageIntervals[idx];
+            const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
+            grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 30), ownMax));
+        });
+
+        // Render page maps
+        await renderPageMap(pageIdx, pageWellIds, allFeatures);
+    }
+
+    btn.disabled = false;
+    btn.textContent = "Download PDF";
 }
 
 // ======================================================
@@ -759,17 +782,7 @@ function downloadPDF(){
         .save();
 }
 
-async function init(){
-    const btn = document.getElementById("pdfBtn");
-
-    updateReportTitles();
-    await Promise.all([ loadReport(), loadMaps() ]);
-
-    btn.disabled = wellIds.length === 0;
-    btn.textContent = "Download PDF";
-}
-
-init();
+initReport();
 </script>
 
 </body>
