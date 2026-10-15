@@ -95,7 +95,7 @@ button:disabled {
 .middle-row {
     display: flex;
     gap: 10px;
-    height: 340px;
+    height: 350px;
     flex: none;
 }
 
@@ -105,10 +105,10 @@ button:disabled {
     background: #fafafa;
     padding: 6px;
     box-sizing: border-box;
-    overflow: hidden; /* Prevent any scroll bars */
+    overflow: hidden; /* Prevent scroll bars */
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px;
     align-content: flex-start;
     justify-content: flex-start;
 }
@@ -148,15 +148,15 @@ button:disabled {
 .well-card {
     box-sizing: border-box;
     border: 1px solid #bbb;
-    padding: 4px 5px;
+    padding: 3px 4px;
     background: white;
-    font-size: 9px;
+    font-size: 8px;
 }
 
 .well-title {
-    height: 14px;
-    margin-bottom: 2px;
-    font-size: 10px;
+    height: 13px;
+    margin-bottom: 1px;
+    font-size: 9px;
     font-weight: bold;
     white-space: nowrap;
     overflow: hidden;
@@ -164,28 +164,28 @@ button:disabled {
 }
 
 .no-data {
-    font-size: 9px;
+    font-size: 8px;
     color: #555;
 }
 
 .profile-wrap {
     display: flex;
-    gap: 3px;
+    gap: 2px;
 }
 
 .depth-axis {
     position: relative;
     box-sizing: border-box;
-    width: 32px;
-    font-size: 8px;
+    width: 28px;
+    font-size: 7px;
     text-align: right;
-    padding-right: 3px;
+    padding-right: 2px;
     border-right: 1px solid #777;
 }
 
 .depth-axis span {
     position: absolute;
-    right: 3px;
+    right: 2px;
     white-space: nowrap;
 }
 
@@ -201,7 +201,7 @@ button:disabled {
     box-sizing: border-box;
     border-bottom: 1px solid #444;
     padding: 1px 2px;
-    font-size: 8px;
+    font-size: 7px;
     line-height: 1;
     overflow: hidden;
     color: #111;
@@ -322,7 +322,7 @@ function getColor(lithology){
 }
 
 // ======================================================
-// CHARTS LOADING WITH STRICT FIT & NO SCROLLBARS
+// CHARTS LOADING WITH DYNAMIC SCALING FOR 1-8 WELLS
 // ======================================================
 async function getLithology(wellId){
     const cleanId = String(wellId).trim();
@@ -377,20 +377,20 @@ function buildCard(wellId, intervals, cardW, chartH, depthForScale){
     if(!intervals || intervals.length === 0){
         card.innerHTML = `
             <div class="well-title">Well ${wellId}</div>
-            <div class="no-data">No data found.</div>`;
+            <div class="no-data">No data.</div>`;
         return card;
     }
 
     const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
     const scale = depthForScale > 0 ? chartH / depthForScale : 1;
-    const columnHeight = Math.max(Math.round(maxDepth * scale), 8);
+    const columnHeight = Math.max(Math.round(maxDepth * scale), 6);
 
     let intervalHtml = "";
 
     intervals.forEach(interval => {
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
-        const showLabel = height > 16;
+        const showLabel = height > 14;
 
         intervalHtml += `
         <div class="interval" style="height:${height}px; background:${color};">
@@ -407,7 +407,7 @@ function buildCard(wellId, intervals, cardW, chartH, depthForScale){
         <div class="profile-wrap">
             <div class="depth-axis" style="height:${columnHeight}px">
                 <span style="top:0">0ft</span>
-                <span style="top:${Math.max(columnHeight - 10, 10)}px">${maxDepth}ft</span>
+                <span style="top:${Math.max(columnHeight - 9, 8)}px">${maxDepth}ft</span>
             </div>
             <div class="log-column" style="height:${columnHeight}px">
                 ${intervalHtml}
@@ -430,31 +430,31 @@ async function loadReport(){
 
     const n = wellIds.length;
 
-    // Strict column mapping for 1 to 8 wells
+    // Intelligent column allocation based on count (1 to 8)
     let cols = 4;
     if (n === 1) cols = 1;
     else if (n === 2) cols = 2;
     else if (n === 3) cols = 3;
     else if (n === 4) cols = 4;
     else if (n === 5 || n === 6) cols = 3;
-    else cols = 4;
+    else cols = 4; // 7 or 8 wells
 
     const rows = Math.ceil(n / cols);
 
-    // Strict container boundaries to guarantee zero overflow/scrollbars
+    // Exact container inner boundaries
     const containerW = 672; 
-    const containerH = 315;
-    const gap = 6;
+    const containerH = 334;
+    const gap = 4;
 
     const cardW = Math.floor((containerW - (cols - 1) * gap) / cols);
-    const chartH = Math.floor((containerH - (rows - 1) * gap - (rows * 20)) / rows);
+    const chartH = Math.floor((containerH - (rows - 1) * gap - (rows * 18)) / rows);
 
     grid.innerHTML = "";
 
     wellIds.forEach((wellId, idx) => {
         const intervals = allIntervals[idx];
         const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-        grid.appendChild(buildCard(wellId, intervals, cardW, Math.max(chartH, 70), ownMax));
+        grid.appendChild(buildCard(wellId, intervals, cardW, Math.max(chartH, 50), ownMax));
     });
 }
 
