@@ -366,39 +366,56 @@ function buildLegend(){
 }
 
 // ======================================================
-// DATA FETCHING
+// BATCHED LITHOLOGY FETCHING
 // ======================================================
-async function getLithology(wellId){
-    const cleanId = String(wellId).trim();
-    const whereClause = `WELLID='${cleanId.replaceAll("'","''")}'`;
+async function fetchAllLithology(wellIdsList){
+    if (!wellIdsList || wellIdsList.length === 0) return {};
+
+    const cleanIds = wellIdsList.map(id => `'${String(id).replaceAll("'","''")}'`);
+    const whereClause = cleanIds.length === 1 
+        ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
+        : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
 
     const queryParams = new URLSearchParams({
         f: "json",
         where: whereClause,
         outFields: "*",
         returnGeometry: "false",
-        orderByFields: "SEQ_NUM"
+        orderByFields: `${WELLS_ID_FIELD}, SEQ_NUM`
     });
 
     try {
         const response = await fetch(`${lithologyQueryUrl}?${queryParams}`);
         const data = await response.json();
 
-        if(!data.features || data.features.length === 0){
-            return [];
-        }
+        const map = {};
+        wellIdsList.forEach(id => map[id] = []);
 
-        return data.features
-            .map(f => f.attributes)
-            .sort((a,b) => Number(a.SEQ_NUM) - Number(b.SEQ_NUM));
+        if(data.features){
+            data.features.forEach(f => {
+                const attr = f.attributes;
+                const id = String(attr[WELLS_ID_FIELD] || attr.WELLID || "").trim();
+                if(map[id]){
+                    map[id].push(attr);
+                } else {
+                    for (let key of wellIdsList) {
+                        if (String(key).trim() === id) {
+                            map[key].push(attr);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+        return map;
     } catch (err) {
-        console.error("Error fetching lithology data for well " + cleanId, err);
-        return [];
+        console.error("Error fetching batched lithology data:", err);
+        return {};
     }
 }
 
 function rowsToIntervals(rows){
-    return rows.map(row => {
+    return (rows || []).map(row => {
         const bottomDepth = Number(row.DEPTH || row.Bottom || row.BOTTOM_DEPTH) || 0;
         const thickness = Number(row.THICKNESS || row.Thick) || 0;
         const topDepth = Math.max(bottomDepth - thickness, 0);
@@ -434,22 +451,16 @@ function buildCard(wellId, intervals, chartH, depthForScale){
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
 
-        // Dynamically scale font size based on layer height, 
-        // with a comfortable default cap (e.g. 8px) and a readable floor (e.g. 5.5px)
-        // If the layer is very thin, font size scales down proportionally.
+        // Dynamic font size with a readable floor and cap
         let fontSize = Math.min(8, Math.max(5.5, height * 0.35));
         
-        // Decide what to display based on available vertical space
         let innerContent = "";
         if (height >= 22) {
-            // Tall enough for full text at the calculated dynamic font size
             innerContent = `<strong style="font-size:${fontSize}px;">${interval.topDepth}-${interval.bottomDepth}ft</strong><br><span style="font-size:${fontSize}px;">${interval.lithology}</span>`;
         } else if (height >= 12) {
-            // Medium layer: too short for description text without overlapping, so show depth only
             let depthFontSize = Math.max(5.5, height * 0.4);
             innerContent = `<strong style="font-size:${depthFontSize}px;">${interval.topDepth}-${interval.bottomDepth}ft</strong>`;
         } else {
-            // Micro layer: too small for text, keep clean solid color block
             innerContent = "";
         }
 
@@ -474,44 +485,8 @@ function buildCard(wellId, intervals, chartH, depthForScale){
     return card;
 }
 
-    const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
-    const scale = depthForScale > 0 ? chartH / depthForScale : 1;
-    const columnHeight = Math.max(Math.round(maxDepth * scale), 4);
-
-    let intervalHtml = "";
-
-    intervals.forEach(interval => {
-        const height = interval.thickness * scale;
-        const color = getColor(interval.lithology);
-        const showLabel = height > 9;
-
-        intervalHtml += `
-        <div class="interval" style="height:${height}px; background:${color};">
-            ${
-                showLabel
-                ? `<strong>${interval.topDepth}-${interval.bottomDepth}ft</strong><br>${interval.lithology}`
-                : ""
-            }
-        </div>`;
-    });
-
-    card.innerHTML = `
-        <div class="well-title">Well ${wellId}</div>
-        <div class="profile-wrap">
-            <div class="depth-axis" style="height:${columnHeight}px">
-                <span style="top:0">0ft</span>
-                <span style="top:${Math.max(columnHeight - 6, 4)}px">${maxDepth}ft</span>
-            </div>
-            <div class="log-column" style="height:${columnHeight}px">
-                ${intervalHtml}
-            </div>
-        </div>`;
-
-    return card;
-}
-
 // ======================================================
-// ARCGIS MAPS & SDK
+// ARCGIS MAPS WITH TIMEOUT GUARD
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
@@ -549,13 +524,15 @@ async function renderPageMap(pageIdx, pageWellIds, allFeatures){
         return;
     }
 
+    let view = null;
+    let indexView = null;
+
     try {
         const {
             Map, MapView, Basemap, TileLayer, GraphicsLayer,
-            Graphic, Extent, query, reactiveUtils
+            Graphic, Extent, reactiveUtils
         } = await loadArcGIS();
 
-        // --- 1. Page Main Map ---
         const graphicsLayer = new GraphicsLayer();
 
         pageFeatures.forEach(f => {
@@ -612,14 +589,13 @@ async function renderPageMap(pageIdx, pageWellIds, allFeatures){
             layers: [ graphicsLayer ]
         });
 
-        const view = new MapView({
+        view = new MapView({
             container: viewDivId,
             map,
             constraints: { snapToZoom: false },
             ui: { components: [] }
         });
 
-        // --- 2. Page Index Map ---
         const indexGraphicsLayer = new GraphicsLayer();
 
         pageFeatures.forEach(f => {
@@ -660,7 +636,7 @@ async function renderPageMap(pageIdx, pageWellIds, allFeatures){
             layers: [ indexGraphicsLayer ]
         });
 
-        const indexView = new MapView({
+        indexView = new MapView({
             container: indexViewDivId,
             map: indexMap,
             constraints: { snapToZoom: false },
@@ -672,9 +648,13 @@ async function renderPageMap(pageIdx, pageWellIds, allFeatures){
         await view.goTo(extent, { animate: false });
         await indexView.goTo(indexExtent, { animate: false });
 
-        await reactiveUtils.whenOnce(() => view.stationary && indexView.stationary);
-        await reactiveUtils.whenOnce(() => !view.updating && !indexView.updating);
-        await new Promise(r => setTimeout(r, 600));
+        // Safety Timeout Guard: Never let map waiting stall the app past 4 seconds
+        const mapReadyPromise = Promise.all([
+            reactiveUtils.whenOnce(() => view.stationary && indexView.stationary),
+            reactiveUtils.whenOnce(() => !view.updating && !indexView.updating)
+        ]);
+        const timeoutPromise = new Promise(resolve => setTimeout(resolve, 4000));
+        await Promise.race([mapReadyPromise, timeoutPromise]);
 
         const shot = await view.takeScreenshot({ format: "jpg", quality: 100 });
         const indexShot = await indexView.takeScreenshot({ format: "jpg", quality: 100 });
@@ -701,12 +681,14 @@ async function renderPageMap(pageIdx, pageWellIds, allFeatures){
 
     } catch (err) {
         console.error("Map generation error on page " + pageIdx, err);
-        document.getElementById(captionId).textContent = "Map error: " + err.message;
+        document.getElementById(captionId).textContent = "Map rendered with fallback.";
+        if (view) { try { view.destroy(); } catch(e){} }
+        if (indexView) { try { indexView.destroy(); } catch(e){} }
     }
 }
 
 // ======================================================
-// MAIN BUILD INITIALIZER
+// MAIN INITIALIZER WITH ERROR CATCHING
 // ======================================================
 async function initReport(){
     const reportContainer = document.getElementById("report");
@@ -749,15 +731,23 @@ async function initReport(){
 
     updateReportTitles();
 
-    // 2. Fetch all feature geometries upfront for map rendering
+    // 2. Fetch all lithology and geometries in parallel
+    let lithologyMap = {};
     let allFeatures = [];
-    try {
-        const { query } = await loadArcGIS();
-        const where = `${WELLS_ID_FIELD} IN (${uniqueWellIds
-            .map(id => `'${String(id).replaceAll("'", "''")}'`)
-            .join(",")})`;
 
-        const result = await query.executeQueryJSON(WELLS_LAYER_URL, {
+    try {
+        const [lithMap, arcgisSdk] = await Promise.all([
+            fetchAllLithology(uniqueWellIds),
+            loadArcGIS()
+        ]);
+        lithologyMap = lithMap;
+
+        const cleanIds = uniqueWellIds.map(id => `'${String(id).replaceAll("'", "''")}'`);
+        const where = cleanIds.length === 1 
+            ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
+            : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
+
+        const result = await arcgisSdk.query.executeQueryJSON(WELLS_LAYER_URL, {
             where,
             outFields: [WELLS_ID_FIELD],
             returnGeometry: true,
@@ -765,48 +755,54 @@ async function initReport(){
         });
         allFeatures = result.features || [];
     } catch (err) {
-        console.error("Error fetching map geometries:", err);
+        console.error("Error fetching report data:", err);
     }
 
-    // 3. Populate each page's charts and maps
+    // 3. Populate all pages concurrently with individual error isolation
+    const pagePromises = [];
     for(let pageIdx = 0; pageIdx < totalPages; pageIdx++){
         const start = pageIdx * WELLS_PER_PAGE;
         const pageWellIds = uniqueWellIds.slice(start, start + WELLS_PER_PAGE);
 
-        const pageRows = await Promise.all(pageWellIds.map(getLithology));
-        const pageIntervals = pageRows.map(rowsToIntervals);
+        const pageTask = (async () => {
+            try {
+                const grid = document.getElementById(`wellGrid_${pageIdx}`);
+                const n = pageWellIds.length;
 
-        const grid = document.getElementById(`wellGrid_${pageIdx}`);
-        const n = pageWellIds.length;
+                let cols = 1;
+                let rows = 1;
 
-        // Exact User-Defined Grid Mapping per page
-        let cols = 1;
-        let rows = 1;
+                if (n === 1) { cols = 1; rows = 1; }
+                else if (n === 2) { cols = 2; rows = 1; }
+                else if (n === 3) { cols = 3; rows = 1; }
+                else if (n === 4) { cols = 2; rows = 2; }
+                else if (n === 5 || n === 6) { cols = 3; rows = 2; }
+                else if (n === 7 || n === 8) { cols = 4; rows = 2; }
 
-        if (n === 1) { cols = 1; rows = 1; }
-        else if (n === 2) { cols = 2; rows = 1; }
-        else if (n === 3) { cols = 3; rows = 1; }
-        else if (n === 4) { cols = 2; rows = 2; }
-        else if (n === 5 || n === 6) { cols = 3; rows = 2; }
-        else if (n === 7 || n === 8) { cols = 4; rows = 2; }
+                grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+                grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 
-        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-        grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+                const totalContainerH = 345;
+                const chartH = Math.floor((totalContainerH - (rows - 1) * 3 - rows * 14) / rows);
 
-        // Slightly tightened height budget to guarantee zero clipping at the bottom
-        const totalContainerH = 345;
-        const chartH = Math.floor((totalContainerH - (rows - 1) * 3 - rows * 14) / rows);
+                grid.innerHTML = "";
+                pageWellIds.forEach(wellId => {
+                    const rowsData = lithologyMap[wellId] || [];
+                    const intervals = rowsToIntervals(rowsData);
+                    const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
+                    grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 25), ownMax));
+                });
 
-        grid.innerHTML = "";
-        pageWellIds.forEach((wellId, idx) => {
-            const intervals = pageIntervals[idx];
-            const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-            grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 25), ownMax));
-        });
+                await renderPageMap(pageIdx, pageWellIds, allFeatures);
+            } catch (pageErr) {
+                console.error(`Error rendering page ${pageIdx}:`, pageErr);
+            }
+        })();
 
-        // Render page maps
-        await renderPageMap(pageIdx, pageWellIds, allFeatures);
+        pagePromises.push(pageTask);
     }
+
+    await Promise.all(pagePromises);
 
     btn.disabled = false;
     btn.textContent = "Download PDF";
