@@ -420,59 +420,9 @@ function buildCard(wellId, intervals, chartH, depthForScale){
     if(!intervals || intervals.length === 0){
         card.innerHTML = `
             <div class="well-title">Well ${wellId}</div>
-            <div class="no-data" style="margin-top:10px;">No data.</div>`;
+            <div class="no-data">No data.</div>`;
         return card;
     }
-
-    const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
-    const scale = depthForScale > 0 ? chartH / depthForScale : 1;
-    const columnHeight = Math.max(Math.round(maxDepth * scale), 4);
-
-    let intervalHtml = "";
-
-    intervals.forEach(interval => {
-        const height = interval.thickness * scale;
-        const color = getColor(interval.lithology);
-
-        // Dynamically scale font size based on layer height, 
-        // with a comfortable default cap (e.g. 8px) and a readable floor (e.g. 5.5px)
-        // If the layer is very thin, font size scales down proportionally.
-        let fontSize = Math.min(8, Math.max(5.5, height * 0.35));
-        
-        // Decide what to display based on available vertical space
-        let innerContent = "";
-        if (height >= 22) {
-            // Tall enough for full text at the calculated dynamic font size
-            innerContent = `<strong style="font-size:${fontSize}px;">${interval.topDepth}-${interval.bottomDepth}ft</strong><br><span style="font-size:${fontSize}px;">${interval.lithology}</span>`;
-        } else if (height >= 12) {
-            // Medium layer: too short for description text without overlapping, so show depth only
-            let depthFontSize = Math.max(5.5, height * 0.4);
-            innerContent = `<strong style="font-size:${depthFontSize}px;">${interval.topDepth}-${interval.bottomDepth}ft</strong>`;
-        } else {
-            // Micro layer: too small for text, keep clean solid color block
-            innerContent = "";
-        }
-
-        intervalHtml += `
-        <div class="interval" style="height:${height}px; background:${color};">
-            ${innerContent}
-        </div>`;
-    });
-
-    card.innerHTML = `
-        <div class="well-title">Well ${wellId}</div>
-        <div class="profile-wrap">
-            <div class="depth-axis" style="height:${columnHeight}px">
-                <span style="top:0">0ft</span>
-                <span style="top:${Math.max(columnHeight - 6, 4)}px">${maxDepth}ft</span>
-            </div>
-            <div class="log-column" style="height:${columnHeight}px">
-                ${intervalHtml}
-            </div>
-        </div>`;
-
-    return card;
-}
 
     const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
     const scale = depthForScale > 0 ? chartH / depthForScale : 1;
