@@ -63,7 +63,7 @@ button:disabled {
     opacity: 0.6;
 }
 
-/* Exact 8.5x11 Portrait Letter Container Width */
+/* Exact 8.5x11 Portrait Letter Container Width (816px) */
 #report {
     width: 816px;
     display: flex;
@@ -74,9 +74,8 @@ button:disabled {
 .pdf-page {
     box-sizing: border-box;
     width: 816px;
-    height: 1056px;
-    max-height: 1056px;
-    padding: 18px 24px;
+    height: 1030px; /* Safely within 1056px letter limit to prevent overflow */
+    padding: 16px 22px;
     background: white;
     overflow: hidden;
     display: flex;
@@ -84,13 +83,11 @@ button:disabled {
     justify-content: space-between;
     page-break-after: always;
     break-after: page;
-    page-break-inside: avoid;
-    break-inside: avoid;
     position: relative;
 }
 
 .report-header {
-    height: 28px;
+    height: 26px;
     font-size: 14px;
     font-weight: bold;
     flex: none;
@@ -105,8 +102,8 @@ button:disabled {
 .charts-section {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    height: 470px;
+    gap: 4px;
+    height: 450px;
     flex: none;
 }
 
@@ -114,17 +111,17 @@ button:disabled {
     flex: 1;
     border: 1px solid #bbb;
     background: #fafafa;
-    padding: 5px;
+    padding: 4px;
     box-sizing: border-box;
     overflow: hidden;
     display: grid;
-    gap: 5px;
+    gap: 4px;
     align-content: stretch;
     justify-content: stretch;
 }
 
 .legend-box {
-    height: 26px;
+    height: 24px;
     flex: none;
     border: 1px solid #bbb;
     background: #fff;
@@ -132,7 +129,7 @@ button:disabled {
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-around;
-    padding: 0 6px;
+    padding: 0 5px;
     font-size: 9px;
 }
 
@@ -151,10 +148,10 @@ button:disabled {
 
 /* Page 1 Bottom Section: Large Scale Map */
 .main-map-section {
-    height: 440px;
+    height: 420px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     position: relative;
     flex: none;
 }
@@ -169,10 +166,10 @@ button:disabled {
 
 /* Page 2 Full Section: Regional Index Map */
 .index-map-section {
-    height: 960px;
+    height: 940px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
     position: relative;
     flex: none;
 }
@@ -213,7 +210,7 @@ button:disabled {
 }
 
 .well-title {
-    height: 12px;
+    height: 11px;
     margin-bottom: 1px;
     font-size: 8.5px;
     font-weight: bold;
@@ -253,7 +250,7 @@ button:disabled {
     border-top: 1px solid #e0e0e0;
     border-bottom: 1px solid #e0e0e0;
     padding: 1px 2px;
-    font-size: 6px;
+    font-size: 5.5px;
     line-height: 1;
     white-space: nowrap;
     overflow: hidden;
@@ -308,7 +305,7 @@ button:disabled {
 .map-caption {
     height: 18px;
     flex: none;
-    font-size: 8.5px;
+    font-size: 8px;
     line-height: 1.1;
     overflow: hidden;
     color: #333;
@@ -710,7 +707,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                     type: "simple-marker",
                     style: "circle",
                     color: [255, 255, 0, 1],
-                    size: 6,
+                    size: 7,
                     outline: { color: [0, 0, 0, 1], width: 1 }
                 }
             }));
@@ -901,15 +898,15 @@ async function initReport(){
                 grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
                 grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 
-                const totalContainerH = 410;
-                const chartH = Math.floor((totalContainerH - (rows - 1) * 5 - rows * 12) / rows);
+                const totalContainerH = 390;
+                const chartH = Math.floor((totalContainerH - (rows - 1) * 4 - rows * 12) / rows);
 
                 grid.innerHTML = "";
                 sectionWellIds.forEach(wellId => {
                     const rowsData = lithologyMap[wellId] || [];
                     const intervals = rowsToIntervals(rowsData);
                     const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
-                    grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 28), ownMax));
+                    grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 26), ownMax));
                 });
 
                 await renderSectionMaps(sectionIdx, sectionWellIds, allFeatures);
@@ -928,7 +925,7 @@ async function initReport(){
 }
 
 // ======================================================
-// PDF EXPORT (Zero margin to prevent html2pdf trailing pages)
+// PDF EXPORT
 // ======================================================
 function downloadPDF(){
     const rawTitle = getCustomTitle();
