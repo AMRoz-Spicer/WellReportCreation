@@ -225,7 +225,7 @@ button:disabled {
 }
 
 .side-labels-column {
-    width: 120px;
+    width: 130px;
     flex: none;
     position: relative;
     overflow: hidden;
@@ -290,12 +290,7 @@ button:disabled {
     right: 0;
     box-sizing: border-box;
     border-bottom: 1px solid #444;
-    padding: 2px 4px;
     overflow: hidden;
-    color: #111;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
 }
 
 .map-caption {
@@ -323,7 +318,7 @@ button:disabled {
 
 <script>
 // ---------- Settings ----------
-const WELLS_PER_PAGE = 4;
+const WELLS_PER_PAGE = 2;
 
 const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
 const WELLS_ID_FIELD  = "WELLID";
@@ -412,7 +407,7 @@ function buildLegend(){
 }
 
 // ======================================================
-// BATCHED LITHOLOGY FETCHING
+// BATCHED LITHOLOGY FETCHING & LAYER MERGING
 // ======================================================
 async function fetchAllLithology(wellIdsList){
     if (!wellIdsList || wellIdsList.length === 0) return {};
@@ -461,7 +456,7 @@ async function fetchAllLithology(wellIdsList){
 }
 
 function rowsToIntervals(rows){
-    return (rows || []).map(row => {
+    const rawIntervals = (rows || []).map(row => {
         const bottomDepth = Number(row.DEPTH || row.Bottom || row.BOTTOM_DEPTH) || 0;
         const thickness = Number(row.THICKNESS || row.Thick) || 0;
         const topDepth = Math.max(bottomDepth - thickness, 0);
@@ -474,6 +469,19 @@ function rowsToIntervals(rows){
             lithology
         };
     });
+
+    // Merge consecutive intervals that share the exact same lithology
+    const merged = [];
+    rawIntervals.forEach(curr => {
+        const last = merged[merged.length - 1];
+        if (last && last.lithology.toLowerCase() === curr.lithology.toLowerCase()) {
+            last.bottomDepth = curr.bottomDepth;
+            last.thickness = last.bottomDepth - last.topDepth;
+        } else {
+            merged.push({ ...curr });
+        }
+    });
+    return merged;
 }
 
 function buildCard(wellId, intervals, chartH, depthForScale){
@@ -499,22 +507,12 @@ function buildCard(wellId, intervals, chartH, depthForScale){
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
 
-        let fontSize = Math.min(9, Math.max(6.5, height * 0.35));
-        let innerContent = "";
+        // All labels are now placed off to the side margin column inline with their layer
+        sideLabelsHtml += `<div class="side-label-absolute" style="top:${currentTopPx}px; height:${Math.max(height, 12)}px;" title="${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</div>`;
 
-        // If layer is tall enough, render both depth and lithology inline side-by-side
-        if (height >= 16) {
-            innerContent = `<span style="font-size:${fontSize}px; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</span>`;
-        } else {
-            // If too thin, suppress text on the chart and push it to the left-side margin panel
-            innerContent = "";
-            sideLabelsHtml += `<div class="side-label-outside side-label-absolute" style="top:${currentTopPx}px; height:${Math.max(height, 12)}px;" title="${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</div>`;
-        }
-
+        // Chart block is kept clean (color bar only)
         intervalHtml += `
-        <div class="interval" style="top:${currentTopPx}px; height:${height}px; background:${color};">
-            ${innerContent}
-        </div>`;
+        <div class="interval" style="top:${currentTopPx}px; height:${height}px; background:${color};"></div>`;
 
         currentTopPx += height;
     });
