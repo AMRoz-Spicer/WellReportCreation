@@ -287,7 +287,7 @@ button:disabled {
 
 <script>
 // ---------- Settings ----------
-const WELLS_PER_PAGE = 6;
+const WELLS_PER_PAGE = 4;
 
 const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
 const WELLS_ID_FIELD  = "WELLID";
@@ -461,22 +461,29 @@ function buildCard(wellId, intervals, chartH, depthForScale){
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
 
-        // Dynamic font sizing with clean layer labeling rules
         let fontSize = Math.min(10, Math.max(7, height * 0.38));
         
         let innerContent = "";
+        let sideLabelHtml = "";
+
         if (height >= 26) {
+            // Plenty of room: render text normally inside the block
             innerContent = `<strong style="font-size:${fontSize}px; line-height:1.1;">${interval.topDepth}-${interval.bottomDepth}ft</strong><br><span style="font-size:${fontSize}px; line-height:1.1;">${interval.lithology}</span>`;
         } else if (height >= 14) {
+            // Medium layer: show depth inside
             let depthFontSize = Math.max(6.5, height * 0.45);
             innerContent = `<strong style="font-size:${depthFontSize}px; line-height:1;">${interval.topDepth}-${interval.bottomDepth}ft</strong>`;
         } else {
-            innerContent = "";
+            // Thin layer: push the description to an external side-label container to prevent overlap!
+            sideLabelHtml = `<span class="external-side-label" style="font-size:6.5px; margin-left:4px; color:#333; white-space:nowrap; align-self:center;">${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}</span>`;
         }
 
         intervalHtml += `
-        <div class="interval" style="height:${height}px; background:${color};">
-            ${innerContent}
+        <div style="display:flex; align-items:stretch; width:100%;">
+            <div class="interval" style="height:${height}px; background:${color}; flex:1;">
+                ${innerContent}
+            </div>
+            ${sideLabelHtml}
         </div>`;
     });
 
@@ -487,7 +494,7 @@ function buildCard(wellId, intervals, chartH, depthForScale){
                 <span style="top:0">0ft</span>
                 <span style="top:${Math.max(columnHeight - 8, 4)}px">${maxDepth}ft</span>
             </div>
-            <div class="log-column" style="height:${columnHeight}px">
+            <div class="log-column" style="height:${columnHeight}px; display:flex; flex-direction:column;">
                 ${intervalHtml}
             </div>
         </div>`;
