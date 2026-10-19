@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FinalV1 - Lithology Report</title>
+
+<link rel="stylesheet" href="https://js.arcgis.com/4.31/esri/themes/light/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://js.arcgis.com/4.31/"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f0f0f0;
+}
+
+#controls {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #fff;
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 1000px;
+    box-sizing: border-box;
+}
+
+#controls label {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+}
+
+#titleInput {
+    padding: 6px 10px;
+    font-size: 14px;
+    width: 320px;
+    border: 1px solid #888;
+    border-radius: 3px;
+}
+
+button {
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+    background: #005e95;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+button:hover {
+    background: #004b78;
+}
+
+button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+/* Multi-Page Report Container (Portrait Letter Ratio) */
+#report {
+    width: 1000px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.pdf-page {
+    box-sizing: border-box;
+    width: 1000px;
+    height: 1415px; /* Portrait Letter Page Height */
+    padding: 20px;
+    background: white;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    page-break-after: always;
+    break-after: page;
+    position: relative;
+    border: 1px solid #ccc;
+}
+
+.report-header {
+    height: 35px;
+    font-size: 18px;
+    font-weight: bold;
+    flex: none;
+    display: flex;
+    align-items: center;
+    border-bottom: 2px solid #333;
+    padding-bottom: 4px;
+    color: #111;
+}
+
+/* Page 1 Top Section: Charts & Legend */
+.charts-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 650px;
+    flex: none;
+}
+
+.charts-container {
+    flex: 1;
+    border: 1px solid #bbb;
+    background: #fafafa;
+    padding: 6px;
+    box-sizing: border-box;
+    overflow: hidden;
+    display: grid;
+    gap: 6px;
+    align-content: stretch;
+    justify-content: stretch;
+}
+
+.legend-box {
+    height: 30px;
+    flex: none;
+    border: 1px solid #bbb;
+    background: #fff;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 6px;
+    font-size: 10px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.swatch {
+    width: 10px;
+    height: 10px;
+    border: 1px solid #444;
+    display: inline-block;
+}
+
+/* Page 1 Bottom Section: Large Scale Map */
+.main-map-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+}
+
+.map-wrapper {
+    flex: 1;
+    position: relative;
+    border: 1px solid #bbb;
+    background: #e8e8e8;
+    box-sizing: border-box;
+}
+
+/* Page 2 Full Section: Regional Index Map */
+.index-map-wrapper {
+    flex: 1;
+    position: relative;
+    border: 1px solid #bbb;
+    background: #e8e8e8;
+    box-sizing: border-box;
+}
+
+.map-view-div, .map-shot-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.map-shot-img {
+    display: none;
+}
+
+.well-card {
+    box-sizing: border-box;
+    border: 1px solid #bbb;
+    padding: 3px 4px;
+    background: white;
+    font-size: 8.5px;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.well-title {
+    height: 14px;
+    margin-bottom: 2px;
+    font-size: 9.5px;
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: none;
+}
+
+.no-data {
+    font-size: 8px;
+    color: #555;
+    margin-top: 10px;
+}
+
+.profile-wrap {
+    display: flex;
+    gap: 3px;
+    flex: 1;
+    overflow: hidden;
+}
+
+.depth-axis {
+    position: relative;
+    box-sizing: border-box;
+    width: 28px;
+    font-size: 7px;
+    text-align: right;
+    padding-right: 3px;
+    border-right: 1px solid #777;
+    flex: none;
+}
+
+.depth-axis span {
+    position: absolute;
+    right: 3px;
+    white-space: nowrap;
+}
+
+.log-column {
+    flex: 1;
+    box-sizing: border-box;
+    border: 1px solid #333;
+    background: #f0f0f0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.interval {
+    box-sizing: border-box;
+    border-bottom: 1px solid #444;
+    padding: 2px 4px;
+    overflow: hidden;
+    color: #111;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.map-caption {
+    height: 24px;
+    flex: none;
+    font-size: 9px;
+    line-height: 1.2;
+    overflow: hidden;
+    color: #333;
+}
+</style>
+</head>
+
+<body>
+
+<div id="controls">
+    <label for="titleInput">Report Title:</label>
+    <input type="text" id="titleInput" value="Lithology Report" oninput="updateReportTitles()">
+    <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
+</div>
+
+<div id="report">
+    <!-- Pages will be dynamically injected here -->
+</div>
+
+<script>
+// ---------- Settings ----------
+const WELLS_PER_PAGE = 8;
+
+const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
+const WELLS_ID_FIELD  = "WELLID";
+
+const IMAGERY_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer";
+const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer";
+
+const MIN_MAP_SPAN_M = 600;
+
+// ---------- URL parameters ----------
+const params = new URLSearchParams(window.location.search);
+const wellsParam = params.get("wells") || params.get("well") || "";
+const titleParam = params.get("title") || params.get("reportTitle") || "Lithology Report";
+
+document.getElementById("titleInput").value = titleParam;
+document.title = "FinalV1 - " + titleParam;
+
+const allIds = wellsParam
+    .split(",")
+    .map(id => id.trim())
+    .filter(id => id.length > 0);
+
+const uniqueWellIds = [...new Set(allIds)];
+const totalSections = Math.max(Math.ceil(uniqueWellIds.length / WELLS_PER_PAGE), 1);
+
+const lithologyQueryUrl = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
+
+function getCustomTitle(){
+    const input = document.getElementById("titleInput");
+    return input && input.value.trim() ? input.value.trim() : "Lithology Report";
+}
+
+function updateReportTitles(){
+    const title = getCustomTitle();
+    document.title = "FinalV1 - " + title;
+    
+    uniqueWellIds.forEach((_, sectionIdx) => {
+        const start = sectionIdx * WELLS_PER_PAGE + 1;
+        const end = Math.min((sectionIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.length);
+        
+        const header1 = document.getElementById(`pageHeaderEl_p1_${sectionIdx}`);
+        if(header1){
+            header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
+        }
+
+        const header2 = document.getElementById(`pageHeaderEl_p2_${sectionIdx}`);
+        if(header2){
+            header2.textContent = `${title} - Regional Context Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
+        }
+    });
+}
+
+function getColor(lithology){
+    const lith = String(lithology || "").toLowerCase();
+
+    if(lith.includes("sand")) return "#f4d03f";
+    if(lith.includes("silt")) return "#c2b280";
+    if(lith.includes("clay")) return "#a67c52";
+    if(lith.includes("gravel")) return "#9e9e9e";
+    if(lith.includes("till") || lith.includes("diamicton")) return "#b0c4de";
+    if(
+        lith.includes("rock") ||
+        lith.includes("bedrock") ||
+        lith.includes("limestone") ||
+        lith.includes("shale") ||
+        lith.includes("dolomite")
+    ) return "#95a5a6";
+
+    return "#d5d8dc";
+}
+
+function buildLegend(){
+    const items = [
+        ["#f4d03f", "Sand"],
+        ["#c2b280", "Silt"],
+        ["#a67c52", "Clay"],
+        ["#9e9e9e", "Gravel"],
+        ["#b0c4de", "Till"],
+        ["#95a5a6", "Bedrock"],
+        ["#d5d8dc", "Other"]
+    ];
+
+    return items.map(([color, label]) =>
+        `<div class="legend-item"><span class="swatch" style="background:${color}"></span>${label}</div>`
+    ).join("");
+}
+
+// ======================================================
+// BATCHED LITHOLOGY FETCHING
+// ======================================================
+async function fetchAllLithology(wellIdsList){
+    if (!wellIdsList || wellIdsList.length === 0) return {};
+
+    const cleanIds = wellIdsList.map(id => `'${String(id).replaceAll("'","''")}'`);
+    const whereClause = cleanIds.length === 1 
+        ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
+        : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
+
+    const queryParams = new URLSearchParams({
+        f: "json",
+        where: whereClause,
+        outFields: "*",
+        returnGeometry: "false",
+        orderByFields: `${WELLS_ID_FIELD}, SEQ_NUM`
+    });
+
+    try {
+        const response = await fetch(`${lithologyQueryUrl}?${queryParams}`);
+        const data = await response.json();
+
+        const map = {};
+        wellIdsList.forEach(id => map[id] = []);
+
+        if(data.features){
+            data.features.forEach(f => {
+                const attr = f.attributes;
+                const id = String(attr[WELLS_ID_FIELD] || attr.WELLID || "").trim();
+                if(map[id]){
+                    map[id].push(attr);
+                } else {
+                    for (let key of wellIdsList) {
+                        if (String(key).trim() === id) {
+                            map[key].push(attr);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+        return map;
+    } catch (err) {
+        console.error("Error fetching batched lithology data:", err);
+        return {};
+    }
+}
+
+function rowsToIntervals(rows){
+    return (rows || []).map(row => {
+        const bottomDepth = Number(row.DEPTH || row.Bottom || row.BOTTOM_DEPTH) || 0;
+        const thickness = Number(row.THICKNESS || row.Thick) || 0;
+        const topDepth = Math.max(bottomDepth - thickness, 0);
+        const lithology = row.PRIM_LITH || row.LITHOLOGY || row.PRIMARY_LITH || row.LITH || "Unknown";
+
+        return {
+            topDepth,
+            bottomDepth,
+            thickness: Math.max(thickness, 1),
+            lithology
+        };
+    });
+}
+
+function buildCard(wellId, intervals, chartH, depthForScale){
+    const card = document.createElement("div");
+    card.className = "well-card";
+
+    if(!intervals || intervals.length === 0){
+        card.innerHTML = `
+            <div class="well-title">Well ${wellId}</div>
+            <div class="no-data">No lithology data found.</div>`;
+        return card;
+    }
+
+    const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
+    const scale = depthForScale > 0 ? chartH / depthForScale : 1;
+    const columnHeight = Math.max(Math.round(maxDepth * scale), 6);
+
+    let intervalHtml = "";
+
+    intervals.forEach(interval => {
+        const height = interval.thickness * scale;
+        const color = getColor(interval.lithology);
+
+        // Dynamic font sizing with clean layer labeling rules
+        let fontSize = Math.min(10, Math.max(7, height * 0.38));
+        
+        let innerContent = "";
+        if (height >= 26) {
+            innerContent = `<strong style="font-size:${fontSize}px; line-height:1.1;">${interval.topDepth}-${interval.bottomDepth}ft</strong><br><span style="font-size:${fontSize}px; line-height:1.1;">${interval.lithology}</span>`;
+        } else if (height >= 14) {
+            let depthFontSize = Math.max(6.5, height * 0.45);
+            innerContent = `<strong style="font-size:${depthFontSize}px; line-height:1;">${interval.topDepth}-${interval.bottomDepth}ft</strong>`;
+        } else {
+            innerContent = "";
+        }
+
+        intervalHtml += `
+        <div class="interval" style="height:${height}px; background:${color};">
+            ${innerContent}
+        </div>`;
+    });
+
+    card.innerHTML = `
+        <div class="well-title">Well ${wellId}</div>
+        <div class="profile-wrap">
+            <div class="depth-axis" style="height:${columnHeight}px">
+                <span style="top:0">0ft</span>
+                <span style="top:${Math.max(columnHeight - 8, 4)}px">${maxDepth}ft</span>
+            </div>
+            <div class="log-column" style="height:${columnHeight}px">
+                ${intervalHtml}
+            </div>
+        </div>`;
+
+    return card;
+}
+
+// ======================================================
+// ARCGIS MAPS RENDERING (Portrait Layout)
+// ======================================================
+function loadArcGIS(){
+    return new Promise((resolve, reject) => {
+        if(typeof require !== "function"){
+            reject(new Error("ArcGIS Maps SDK did not load."));
+            return;
+        }
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/Basemap",
+            "esri/layers/TileLayer",
+            "esri/layers/GraphicsLayer",
+            "esri/Graphic",
+            "esri/geometry/Extent",
+            "esri/rest/query",
+            "esri/core/reactiveUtils"
+        ], (Map, MapView, Basemap, TileLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils) => {
+            resolve({ Map, MapView, Basemap, TileLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils });
+        });
+    });
+}
+
+async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
+    const mainViewDivId = `mapView_main_${sectionIdx}`;
+    const mainShotImgId = `mapShot_main_${sectionIdx}`;
+    const mainCaptionId = `mapCaption_main_${sectionIdx}`;
+
+    const indexViewDivId = `mapView_index_${sectionIdx}`;
+    const indexShotImgId = `mapShot_index_${sectionIdx}`;
+    const indexCaptionId = `mapCaption_index_${sectionIdx}`;
+
+    const sectionFeatures = allFeatures.filter(f => sectionWellIds.includes(String(f.attributes[WELLS_ID_FIELD])));
+
+    if(sectionFeatures.length === 0){
+        document.getElementById(mainCaptionId).textContent = "No matching well locations for this section.";
+        document.getElementById(indexCaptionId).textContent = "No matching regional context for this section.";
+        return;
+    }
+
+    let mainView = null;
+    let indexView = null;
+
+    try {
+        const {
+            Map, MapView, Basemap, TileLayer, GraphicsLayer,
+            Graphic, Extent, reactiveUtils
+        } = await loadArcGIS();
+
+        // ----------------------------------------------------
+        // 1. RENDER PAGE 1: LARGE-SCALE MAIN MAP
+        // ----------------------------------------------------
+        const mainGraphicsLayer = new GraphicsLayer();
+
+        allFeatures.forEach(f => {
+            const id = f.attributes[WELLS_ID_FIELD];
+            const isCurrentSection = sectionWellIds.includes(String(id));
+
+            if (isCurrentSection) {
+                mainGraphicsLayer.add(new Graphic({
+                    geometry: f.geometry,
+                    symbol: {
+                        type: "simple-marker",
+                        style: "circle",
+                        color: [230, 30, 30, 1],
+                        size: 11,
+                        outline: { color: [255, 255, 255, 1], width: 2 }
+                    }
+                }));
+
+                mainGraphicsLayer.add(new Graphic({
+                    geometry: f.geometry,
+                    symbol: {
+                        type: "text",
+                        text: String(id),
+                        color: [255, 255, 255, 1],
+                        haloColor: [0, 0, 0, 1],
+                        haloSize: "2px",
+                        yoffset: 11,
+                        font: { size: 10, weight: "bold" }
+                    }
+                }));
+            } else {
+                mainGraphicsLayer.add(new Graphic({
+                    geometry: f.geometry,
+                    symbol: {
+                        type: "simple-marker",
+                        style: "circle",
+                        color: [140, 140, 140, 0.8],
+                        size: 8,
+                        outline: { color: [255, 255, 255, 0.8], width: 1 }
+                    }
+                }));
+            }
+        });
+
+        const xs = sectionFeatures.map(f => f.geometry.x);
+        const ys = sectionFeatures.map(f => f.geometry.y);
+
+        let xmin = Math.min(...xs), xmax = Math.max(...xs);
+        let ymin = Math.min(...ys), ymax = Math.max(...ys);
+
+        const cx = (xmin + xmax) / 2;
+        const cy = (ymin + ymax) / 2;
+        const halfW = Math.max((xmax - xmin) / 2 * 1.5, MIN_MAP_SPAN_M / 2);
+        const halfH = Math.max((ymax - ymin) / 2 * 1.5, MIN_MAP_SPAN_M / 2);
+
+        const mainExtent = new Extent({
+            xmin: cx - halfW,
+            xmax: cx + halfW,
+            ymin: cy - halfH,
+            ymax: cy + halfH,
+            spatialReference: { wkid: 102100 }
+        });
+
+        const mainMap = new Map({
+            basemap: new Basemap({
+                baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
+            }),
+            layers: [ mainGraphicsLayer ]
+        });
+
+        mainView = new MapView({
+            container: mainViewDivId,
+            map: mainMap,
+            constraints: { snapToZoom: false },
+            ui: { components: [] }
+        });
+
+        // ----------------------------------------------------
+        // 2. RENDER PAGE 2: SMALL-SCALE REGIONAL INDEX MAP
+        // ----------------------------------------------------
+        const indexGraphicsLayer = new GraphicsLayer();
+
+        sectionFeatures.forEach(f => {
+            indexGraphicsLayer.add(new Graphic({
+                geometry: f.geometry,
+                symbol: {
+                    type: "simple-marker",
+                    style: "circle",
+                    color: [255, 255, 0, 1],
+                    size: 7,
+                    outline: { color: [0, 0, 0, 1], width: 1 }
+                }
+            }));
+        });
+
+        indexGraphicsLayer.add(new Graphic({
+            geometry: mainExtent,
+            symbol: {
+                type: "simple-fill",
+                color: [255, 0, 0, 0.15],
+                outline: { color: [255, 0, 0, 1], width: 2 }
+            }
+        }));
+
+        const indexScaleFactor = 12;
+        const indexExtent = new Extent({
+            xmin: cx - (halfW * indexScaleFactor),
+            xmax: cx + (halfW * indexScaleFactor),
+            ymin: cy - (halfH * indexScaleFactor),
+            ymax: cy + (halfH * indexScaleFactor),
+            spatialReference: { wkid: 102100 }
+        });
+
+        const indexMap = new Map({
+            basemap: new Basemap({
+                baseLayers: [ new TileLayer({ url: TOPO_URL }) ]
+            }),
+            layers: [ indexGraphicsLayer ]
+        });
+
+        indexView = new MapView({
+            container: indexViewDivId,
+            map: indexMap,
+            constraints: { snapToZoom: false },
+            ui: { components: [] }
+        });
+
+        // Load both maps concurrently
+        await Promise.all([ mainView.when(), indexView.when() ]);
+        
+        await mainView.goTo(mainExtent, { animate: false });
+        await indexView.goTo(indexExtent, { animate: false });
+
+        const mapReadyPromise = Promise.all([
+            reactiveUtils.whenOnce(() => mainView.stationary && indexView.stationary),
+            reactiveUtils.whenOnce(() => !mainView.updating && !indexView.updating)
+        ]);
+        const timeoutPromise = new Promise(resolve => setTimeout(resolve, 4000));
+        await Promise.race([mapReadyPromise, timeoutPromise]);
+
+        const mainShot = await mainView.takeScreenshot({ format: "jpg", quality: 100 });
+        const indexShot = await indexView.takeScreenshot({ format: "jpg", quality: 100 });
+        
+        const mainScaleText = Math.round(mainView.scale).toLocaleString();
+        const indexScaleText = Math.round(indexView.scale).toLocaleString();
+
+        const mainImg = document.getElementById(mainShotImgId);
+        mainImg.src = mainShot.dataUrl;
+        await mainImg.decode();
+        mainImg.style.display = "block";
+        document.getElementById(mainViewDivId).style.display = "none";
+
+        const indexImg = document.getElementById(indexShotImgId);
+        indexImg.src = indexShot.dataUrl;
+        await indexImg.decode();
+        indexImg.style.display = "block";
+        document.getElementById(indexViewDivId).style.display = "none";
+
+        document.getElementById(mainCaptionId).innerHTML =
+            `Section Wells (${sectionFeatures.length}): ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${mainScaleText} | Imagery: Esri, Maxar`;
+
+        document.getElementById(indexCaptionId).innerHTML =
+            `Regional Index Context | Scale 1:${indexScaleText} | Topographic Basemap`;
+
+        mainView.destroy();
+        indexView.destroy();
+
+    } catch (err) {
+        console.error("Map generation error on section " + sectionIdx, err);
+        document.getElementById(mainCaptionId).textContent = "Map rendered with fallback.";
+        document.getElementById(indexCaptionId).textContent = "Index map rendered with fallback.";
+        if (mainView) { try { mainView.destroy(); } catch(e){} }
+        if (indexView) { try { indexView.destroy(); } catch(e){} }
+    }
+}
+
+// ======================================================
+// MAIN INITIALIZER (2-Page Portrait Sections)
+// ======================================================
+async function initReport(){
+    const reportContainer = document.getElementById("report");
+    const btn = document.getElementById("pdfBtn");
+
+    if(uniqueWellIds.length === 0){
+        reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
+        return;
+    }
+
+    reportContainer.innerHTML = "";
+
+    // 1. Build 2-Page DOM Skeletons per Section
+    for(let sectionIdx = 0; sectionIdx < totalSections; sectionIdx++){
+        // --- PAGE 1: Title, Charts, Legend, and Large-Scale Map ---
+        const page1Div = document.createElement("div");
+        page1Div.className = "pdf-page";
+        page1Div.id = `page1_${sectionIdx}`;
+        page1Div.innerHTML = `
+            <div class="report-header" id="pageHeaderEl_p1_${sectionIdx}">Lithology Report</div>
+            <div class="charts-section">
+                <div class="charts-container" id="wellGrid_${sectionIdx}">
+                    <p style="font-size:11px; color:#555; padding:8px;">Loading charts...</p>
+                </div>
+                <div class="legend-box">${buildLegend()}</div>
+            </div>
+            <div class="main-map-section">
+                <div class="map-wrapper">
+                    <div class="map-view-div" id="mapView_main_${sectionIdx}"></div>
+                    <img class="map-shot-img" id="mapShot_main_${sectionIdx}" alt="Main well location map">
+                </div>
+                <div class="map-caption" id="mapCaption_main_${sectionIdx}">Loading map data...</div>
+            </div>
+        `;
+        reportContainer.appendChild(page1Div);
+
+        // --- PAGE 2: Title and Regional Index Map ---
+        const page2Div = document.createElement("div");
+        page2Div.className = "pdf-page";
+        page2Div.id = `page2_${sectionIdx}`;
+        page2Div.innerHTML = `
+            <div class="report-header" id="pageHeaderEl_p2_${sectionIdx}">Lithology Report - Regional Context</div>
+            <div class="index-map-wrapper">
+                <div class="map-view-div" id="mapView_index_${sectionIdx}"></div>
+                <img class="map-shot-img" id="mapShot_index_${sectionIdx}" alt="Regional index map">
+            </div>
+            <div class="map-caption" id="mapCaption_index_${sectionIdx}">Loading regional context...</div>
+        `;
+        reportContainer.appendChild(page2Div);
+    }
+
+    updateReportTitles();
+
+    // 2. Fetch all lithology and map geometries in parallel
+    let lithologyMap = {};
+    let allFeatures = [];
+
+    try {
+        const [lithMap, arcgisSdk] = await Promise.all([
+            fetchAllLithology(uniqueWellIds),
+            loadArcGIS()
+        ]);
+        lithologyMap = lithMap;
+
+        const cleanIds = uniqueWellIds.map(id => `'${String(id).replaceAll("'", "''")}'`);
+        const where = cleanIds.length === 1 
+            ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
+            : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
+
+        const result = await arcgisSdk.query.executeQueryJSON(WELLS_LAYER_URL, {
+            where,
+            outFields: [WELLS_ID_FIELD],
+            returnGeometry: true,
+            outSpatialReference: { wkid: 102100 }
+        });
+        allFeatures = result.features || [];
+    } catch (err) {
+        console.error("Error fetching report data:", err);
+    }
+
+    // 3. Populate all sections concurrently
+    const sectionPromises = [];
+    for(let sectionIdx = 0; sectionIdx < totalSections; sectionIdx++){
+        const start = sectionIdx * WELLS_PER_PAGE;
+        const sectionWellIds = uniqueWellIds.slice(start, start + WELLS_PER_PAGE);
+
+        const sectionTask = (async () => {
+            try {
+                const grid = document.getElementById(`wellGrid_${sectionIdx}`);
+                const n = sectionWellIds.length;
+
+                let cols = 1;
+                let rows = 1;
+
+                if (n === 1) { cols = 1; rows = 1; }
+                else if (n === 2) { cols = 2; rows = 1; }
+                else if (n === 3) { cols = 3; rows = 1; }
+                else if (n === 4) { cols = 2; rows = 2; }
+                else if (n === 5 || n === 6) { cols = 3; rows = 2; }
+                else if (n === 7 || n === 8) { cols = 4; rows = 2; }
+
+                grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+                grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+                // Portrait height budget for 8 charts
+                const totalContainerH = 590;
+                const chartH = Math.floor((totalContainerH - (rows - 1) * 6 - rows * 18) / rows);
+
+                grid.innerHTML = "";
+                sectionWellIds.forEach(wellId => {
+                    const rowsData = lithologyMap[wellId] || [];
+                    const intervals = rowsToIntervals(rowsData);
+                    const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
+                    grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 40), ownMax));
+                });
+
+                await renderSectionMaps(sectionIdx, sectionWellIds, allFeatures);
+            } catch (secErr) {
+                console.error(`Error rendering section ${sectionIdx}:`, secErr);
+            }
+        })();
+
+        sectionPromises.push(sectionTask);
+    }
+
+    await Promise.all(sectionPromises);
+
+    btn.disabled = false;
+    btn.textContent = "Download PDF";
+}
+
+// ======================================================
+// PDF EXPORT (Portrait Format)
+// ======================================================
+function downloadPDF(){
+    const rawTitle = getCustomTitle();
+    const safeFilename = rawTitle.replace(/[^a-zA-Z0-9-_]/g, "_") + ".pdf";
+
+    html2pdf()
+        .set({
+            margin: 0.2,
+            filename: safeFilename,
+            image: { type: "jpeg", quality: 1.0 },
+            html2canvas: { scale: 2.2, backgroundColor: "#ffffff", scrollY: 0, useCORS: true },
+            jsPDF: { unit: "in", format: "letter", orientation: "portrait" }
+        })
+        .from(document.getElementById("report"))
+        .save();
+}
+
+initReport();
+</script>
+
+</body>
+</html>
