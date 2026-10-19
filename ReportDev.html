@@ -499,17 +499,15 @@ function buildCard(wellId, intervals, chartH, depthForScale){
         const height = interval.thickness * scale;
         const color = getColor(interval.lithology);
 
-        let fontSize = Math.min(10, Math.max(7, height * 0.38));
+        let fontSize = Math.min(9, Math.max(6.5, height * 0.35));
         let innerContent = "";
 
-        if (height >= 26) {
-            innerContent = `<strong style="font-size:${fontSize}px; line-height:1.1;">${interval.topDepth}-${interval.bottomDepth}ft</strong><br><span style="font-size:${fontSize}px; line-height:1.1;">${interval.lithology}</span>`;
-        } else if (height >= 14) {
-            let depthFontSize = Math.max(6.5, height * 0.45);
-            innerContent = `<strong style="font-size:${depthFontSize}px; line-height:1;">${interval.topDepth}-${interval.bottomDepth}ft</strong>`;
+        // If layer is tall enough, render both depth and lithology inline side-by-side
+        if (height >= 16) {
+            innerContent = `<span style="font-size:${fontSize}px; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</span>`;
         } else {
+            // If too thin, suppress text on the chart and push it to the left-side margin panel
             innerContent = "";
-            // Position side label absolute at the exact same vertical offset (top) as the layer!
             sideLabelsHtml += `<div class="side-label-outside side-label-absolute" style="top:${currentTopPx}px; height:${Math.max(height, 12)}px;" title="${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</div>`;
         }
 
