@@ -499,18 +499,50 @@ function buildCard(wellId, intervals, chartH, depthForScale){
     const scale = depthForScale > 0 ? chartH / depthForScale : 1;
     const columnHeight = Math.max(Math.round(maxDepth * scale), 6);
 
+    // 1. Initial height calculation based on exact depth scale
+    const rawHeights = intervals.map(i => i.thickness * scale);
+
+    // 2. Define minimum readable label height (e.g. 13px for crisp side text)
+    const MIN_LAYER_PX = 13;
+    let totalDeficit = 0;
+    let thickLayerIndices = [];
+
+    // Identify thin layers that need boosting and thick layers that can spare pixels
+    rawHeights.forEach((h, idx) => {
+        if (h < MIN_LAYER_PX) {
+            totalDeficit += (MIN_LAYER_PX - h);
+        } else {
+            thickLayerIndices.push(idx);
+        }
+    });
+
+    // Calculate total height available in thicker layers to tax
+    const totalThickPx = thickLayerIndices.reduce((sum, idx) => sum + rawHeights[idx], 0);
+
+    // 3. Apply the "socialism" redistribution: boost thin layers, tax thick layers proportionally
+    const finalHeights = rawHeights.map((h, idx) => {
+        if (h < MIN_LAYER_PX) {
+            return MIN_LAYER_PX;
+        } else if (thickLayerIndices.includes(idx) && totalThickPx > 0) {
+            // Subtract share of deficit proportional to how large the thick layer is
+            const shareOfDeficit = (h / totalThickPx) * totalDeficit;
+            return Math.max(MIN_LAYER_PX, h - shareOfDeficit);
+        }
+        return h;
+    });
+
     let intervalHtml = "";
     let sideLabelsHtml = "";
     let currentTopPx = 0;
 
-    intervals.forEach(interval => {
-        const height = interval.thickness * scale;
+    intervals.forEach((interval, idx) => {
+        const height = finalHeights[idx];
         const color = getColor(interval.lithology);
 
-        // All labels are now placed off to the side margin column inline with their layer
-        sideLabelsHtml += `<div class="side-label-absolute" style="top:${currentTopPx}px; height:${Math.max(height, 12)}px;" title="${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</div>`;
+        // Render side label positioned at the exact recalculated top offset
+        sideLabelsHtml += `<div class="side-label-absolute" style="top:${currentTopPx}px; height:${height}px;" title="${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</div>`;
 
-        // Chart block is kept clean (color bar only)
+        // Render clean color bar block
         intervalHtml += `
         <div class="interval" style="top:${currentTopPx}px; height:${height}px; background:${color};"></div>`;
 
@@ -536,7 +568,6 @@ function buildCard(wellId, intervals, chartH, depthForScale){
 
     return card;
 }
-
 // ======================================================
 // ARCGIS MAPS RENDERING (Portrait Layout)
 // ======================================================
