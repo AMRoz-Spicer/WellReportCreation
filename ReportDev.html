@@ -582,14 +582,13 @@ function loadArcGIS(){
             "esri/views/MapView",
             "esri/Basemap",
             "esri/layers/TileLayer",
-            "esri/layers/FeatureLayer",
             "esri/layers/GraphicsLayer",
             "esri/Graphic",
             "esri/geometry/Extent",
             "esri/rest/query",
             "esri/core/reactiveUtils"
-        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils) => {
-            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils });
+        ], (Map, MapView, Basemap, TileLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils) => {
+            resolve({ Map, MapView, Basemap, TileLayer, GraphicsLayer, Graphic, Extent, query, reactiveUtils });
         });
     });
 }
@@ -616,7 +615,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
     try {
         const {
-            Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer,
+            Map, MapView, Basemap, TileLayer, GraphicsLayer,
             Graphic, Extent, reactiveUtils
         } = await loadArcGIS();
 
@@ -684,23 +683,11 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             spatialReference: { wkid: 102100 }
         });
 
-        // 7 New Custom Layers added here below the imagery basemap and above/below graphics layer
         const mainMap = new Map({
             basemap: new Basemap({
                 baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
             }),
-            layers: [
-                /*
-                new FeatureLayer({ 'https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer' }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer" }),
-                new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer" }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer" }),
-                new FeatureLayer({ url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0" }),
-                new FeatureLayer({ url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer" }),
-                new FeatureLayer({ url: "https://services8.arcgis.com/rqqqrAA1qS00eCqT/arcgis/rest/services/WashtenawCountyParcels_Temp/FeatureServer" }),
-                mainGraphicsLayer
-                */
-            ]
+            layers: [ mainGraphicsLayer ]
         });
 
         mainView = new MapView({
@@ -917,7 +904,7 @@ async function initReport(){
                 grid.innerHTML = "";
                 sectionWellIds.forEach(wellId => {
                     const rowsData = lithologyMap[wellId] || [];
-                    const intervals = rowsToInfo ? rowsToIntervals(rowsData) : rowsToIntervals(rowsData);
+                    const intervals = rowsToIntervals(rowsData);
                     const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
                     grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 26), ownMax));
                 });
