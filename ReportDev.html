@@ -791,22 +791,34 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         // ======================================================
         // FEATURE CLASSES (LAYERS) SECTION
         // ======================================================
+        // Polygon Renderer with NO FILL and BLACK OUTLINES
+        const polygonRenderer = {
+            type: "simple",
+            symbol: {
+                type: "simple-fill",
+                color: [0, 0, 0, 0], // Transparent / No fill
+                outline: {
+                    color: [0, 0, 0, 1], // Pure black outline
+                    width: 1.25
+                }
+            }
+        };
+
         const mainMap = new Map({
             basemap: new Basemap({
                 baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
             }),
             layers: [
-                new FeatureLayer({ url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0", renderer: standardRenderer }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87", renderer: standardRenderer }),
-                new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0", renderer: standardRenderer }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3", renderer: standardRenderer }),
-                new FeatureLayer({ url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0", renderer: standardRenderer }),
-                new FeatureLayer({ url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0", renderer: standardRenderer }),
-                new FeatureLayer({ url: "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0", renderer: polygonRenderer }),
+                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87", renderer: polygonRenderer }),
+                new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0", renderer: polygonRenderer }),
+                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3", renderer: polygonRenderer }),
+                new FeatureLayer({ url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0", renderer: polygonRenderer }),
+                new FeatureLayer({ url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0", renderer: polygonRenderer }),
+                new FeatureLayer({ url: "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0", renderer: polygonRenderer }),
                 mainGraphicsLayer
             ]
         });
-
         mainView = new MapView({
             container: mainViewDivId,
             map: mainMap,
