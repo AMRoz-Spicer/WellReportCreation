@@ -348,10 +348,10 @@ document.title = "FinalV1 - " + titleParam;
 const allIds = wellsParam
     .split(",")
     .map(id => id.trim())
-    .filter(id => id. > 0);
+    .filter(id => id.length > 0);
 
 const uniqueWellIds = [...new Set(allIds)];
-const totalSections = Math.max(Math.ceil(uniqueWellIds. / WELLS_PER_PAGE), 1);
+const totalSections = Math.max(Math.ceil(uniqueWellIds.length / WELLS_PER_PAGE), 1);
 
 const lithologyQueryUrl = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
 
@@ -366,7 +366,7 @@ function updateReportTitles(){
     
     uniqueWellIds.forEach((_, sectionIdx) => {
         const start = sectionIdx * WELLS_PER_PAGE + 1;
-        const end = Math.min((sectionIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.);
+        const end = Math.min((sectionIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.length);
         
         const header1 = document.getElementById(`pageHeaderEl_p1_${sectionIdx}`);
         if(header1){
@@ -906,7 +906,7 @@ async function initReport(){
         const sectionTask = (async () => {
             try {
                 const grid = document.getElementById(`wellGrid_${sectionIdx}`);
-                const n = sectionWellIds.;
+                const n = sectionWellIds.legnth;
 
                 let cols = 1;
                 let rows = 1;
@@ -928,7 +928,7 @@ async function initReport(){
                 sectionWellIds.forEach(wellId => {
                     const rowsData = lithologyMap[wellId] || [];
                     const intervals = rowsToIntervals ? rowsToIntervals(rowsData) : rowsToIntervals(rowsData);
-                    const ownMax = intervals. ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
+                    const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
                     grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 26), ownMax));
                 });
 
