@@ -348,10 +348,10 @@ document.title = "FinalV1 - " + titleParam;
 const allIds = wellsParam
     .split(",")
     .map(id => id.trim())
-    .filter(id => id.length > 0);
+    .filter(id => id. > 0);
 
 const uniqueWellIds = [...new Set(allIds)];
-const totalSections = Math.max(Math.ceil(uniqueWellIds.length / WELLS_PER_PAGE), 1);
+const totalSections = Math.max(Math.ceil(uniqueWellIds. / WELLS_PER_PAGE), 1);
 
 const lithologyQueryUrl = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/4/query";
 
@@ -366,16 +366,16 @@ function updateReportTitles(){
     
     uniqueWellIds.forEach((_, sectionIdx) => {
         const start = sectionIdx * WELLS_PER_PAGE + 1;
-        const end = Math.min((sectionIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.length);
+        const end = Math.min((sectionIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.);
         
         const header1 = document.getElementById(`pageHeaderEl_p1_${sectionIdx}`);
         if(header1){
-            header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
+            header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.}) [Section ${sectionIdx + 1} of ${totalSections}]`;
         }
 
         const header2 = document.getElementById(`pageHeaderEl_p2_${sectionIdx}`);
         if(header2){
-            header2.textContent = `${title} - Regional Context Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
+            header2.textContent = `${title} - Regional Context Map (Wells ${start}-${end} of ${uniqueWellIds.}) [Section ${sectionIdx + 1} of ${totalSections}]`;
         }
     });
 }
@@ -685,19 +685,30 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         });
 
         // 7 New Custom Layers added here below the imagery basemap and above/below graphics layer
+        const standardRenderer = {
+            type: "simple",
+            symbol: {
+                type: "simple-fill",
+                color: [0, 94, 149, 1.0], // Fill color with 20% opacity
+                outline: {
+                    color: [0, 94, 149], // Border line color
+                    width: 1.25
+                }
+            }
+        };
+
         const mainMap = new Map({
             basemap: new Basemap({
                 baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
             }),
             layers: [
-                // INSERT YOUR 7 LAYER URLS BELOW:
-                new FeatureLayer({ url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0" }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87" }),
-                new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0" }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3" }),
-                new FeatureLayer({ url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0" }),
-                new FeatureLayer({ url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0" }),
-                new FeatureLayer({ url: "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0" }),
+                new FeatureLayer({ url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0", renderer: standardRenderer }),
+                new FeatureLayer({ url: "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0", renderer: standardRenderer }),
                 mainGraphicsLayer
             ]
         });
@@ -872,7 +883,7 @@ async function initReport(){
         lithologyMap = lithMap;
 
         const cleanIds = uniqueWellIds.map(id => `'${String(id).replaceAll("'", "''")}'`);
-        const where = cleanIds.length === 1 
+        const where = cleanIds. === 1 
             ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
             : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
 
@@ -895,7 +906,7 @@ async function initReport(){
         const sectionTask = (async () => {
             try {
                 const grid = document.getElementById(`wellGrid_${sectionIdx}`);
-                const n = sectionWellIds.length;
+                const n = sectionWellIds.;
 
                 let cols = 1;
                 let rows = 1;
@@ -917,7 +928,7 @@ async function initReport(){
                 sectionWellIds.forEach(wellId => {
                     const rowsData = lithologyMap[wellId] || [];
                     const intervals = rowsToIntervals ? rowsToIntervals(rowsData) : rowsToIntervals(rowsData);
-                    const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
+                    const ownMax = intervals. ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
                     grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 26), ownMax));
                 });
 
