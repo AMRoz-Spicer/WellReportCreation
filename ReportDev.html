@@ -689,10 +689,10 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             type: "simple",
             symbol: {
                 type: "simple-fill",
-                color: [0, 94, 149, 1.0], // Fill color with 20% opacity
+                color: [0, 0, 0, 0],   // Transparent / No fill (Alpha set to 0)
                 outline: {
-                    color: [0, 94, 149], // Border line color
-                    width: 1.25
+                    color: [0, 0, 0, 1],   // Pure black outline
+                    width: 1.25            // Border width
                 }
             }
         };
