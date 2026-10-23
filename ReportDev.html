@@ -386,8 +386,16 @@ const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_T
 
 const MIN_MAP_SPAN_M = 600;
 
-// ---------- PARCEL FEATURE LAYER URL FOR ACREAGE CALCULATIONS ----------
-const PARCEL_LAYER_URL = "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0"; 
+// ---------- MULTI-COUNTY PARCEL FEATURE LAYER URLS ----------
+const PARCEL_LAYER_URLS = [
+    "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
+    "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87",
+    "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0",
+    "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3",
+    "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0",
+    "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0",
+    "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0"
+];
 
 // Global clean outline / transparent fill renderer definition
 const polygonRenderer = {
@@ -634,7 +642,7 @@ function buildCard(wellId, intervals, chartH, depthForScale){
 }
 
 // ======================================================
-// ARCGIS MAPS & STRICT WELL-MATCHED ACREAGE ENGINE
+// ARCGIS MAPS & MULTI-COUNTY BUFFERED ACREAGE ENGINE
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
@@ -660,42 +668,48 @@ function loadArcGIS(){
     });
 }
 
-// Strictly query parcels containing the wells and map to Well ID
+// Query parcels across all 7 county layers using a buffered point intersection
 async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
-    if (!PARCEL_LAYER_URL || PARCEL_LAYER_URL.includes("YOUR_PARCEL") || sectionFeatures.length === 0) {
-        return null;
-    }
+    if (sectionFeatures.length === 0) return null;
 
     try {
         const parcelSummary = [];
-        const processedParcelKeys = new Set();
+        const processedWellIds = new Set();
 
         for (const feature of sectionFeatures) {
-            const wellId = feature.attributes[WELLS_ID_FIELD];
-            const wellGeo = feature.geometry;
+            const wellId = String(feature.attributes[WELLS_ID_FIELD]);
+            if (processedWellIds.has(wellId)) continue;
 
-            const parcelResults = await arcgisSdk.query.executeQueryJSON(PARCEL_LAYER_URL, {
-                geometry: wellGeo,
-                spatialRelationship: "contains", // Parcel strictly contains the well point
-                outFields: ["*"],
-                returnGeometry: true,
-                outSpatialReference: { wkid: 102100 }
-            });
+            // Apply a 1-meter buffer to ensure reliable geometry intersection across REST services
+            const bufferedPoint = arcgisSdk.geometryEngine.buffer(feature.geometry, 1, "meters");
+            let foundParcel = false;
 
-            if (parcelResults.features && parcelResults.features.length > 0) {
-                for (const parcel of parcelResults.features) {
-                    const attrs = parcel.attributes;
-                    const parcelKey = attrs.OBJECTID || attrs.PARCEL_ID || attrs.PIN || attrs.TAXID;
+            for (const url of PARCEL_LAYER_URLS) {
+                if (foundParcel) break;
 
-                    if (parcelKey && !processedParcelKeys.has(parcelKey)) {
-                        processedParcelKeys.add(parcelKey);
+                try {
+                    const parcelResults = await arcgisSdk.query.executeQueryJSON(url, {
+                        geometry: bufferedPoint || feature.geometry,
+                        spatialRelationship: "intersects",
+                        outFields: ["*"],
+                        returnGeometry: true,
+                        outSpatialReference: { wkid: 102100 }
+                    });
+
+                    if (parcelResults.features && parcelResults.features.length > 0) {
+                        const parcel = parcelResults.features[0];
                         const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcel.geometry, "acres");
-                        
+
                         parcelSummary.push({
-                            wellId: String(wellId),
+                            wellId: wellId,
                             acres: areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "N/A"
                         });
+
+                        processedWellIds.add(wellId);
+                        foundParcel = true;
                     }
+                } catch (layerErr) {
+                    // Skip layers that throw cross-origin or schema errors
                 }
             }
         }
@@ -804,13 +818,13 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
             }),
             layers: [
-                new FeatureLayer({ url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0", renderer: polygonRenderer }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87", renderer: polygonRenderer }),
-                new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0", renderer: polygonRenderer }),
-                new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3", renderer: polygonRenderer }),
-                new FeatureLayer({ url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0", renderer: polygonRenderer }),
-                new FeatureLayer({ url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0", renderer: polygonRenderer }),
-                new FeatureLayer({ url: "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0", renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[0], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[1], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[2], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[3], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[4], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[5], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[6], renderer: polygonRenderer }),
                 mainGraphicsLayer
             ]
         });
