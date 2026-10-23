@@ -387,7 +387,20 @@ const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_T
 const MIN_MAP_SPAN_M = 600;
 
 // ---------- PARCEL FEATURE LAYER URL FOR ACREAGE CALCULATIONS ----------
-const PARCEL_LAYER_URL = "YOUR_PARCEL_FEATURE_LAYER_URL/0"; 
+const PARCEL_LAYER_URL = "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0"; 
+
+// Global clean outline / transparent fill renderer definition
+const polygonRenderer = {
+    type: "simple",
+    symbol: {
+        type: "simple-fill",
+        color: [0, 0, 0, 0], // Transparent / No fill
+        outline: {
+            color: [0, 0, 0, 1], // Pure black outline
+            width: 1.25
+        }
+    }
+};
 
 // ---------- URL Parameters ----------
 const params = new URLSearchParams(window.location.search);
@@ -775,34 +788,9 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             spatialReference: { wkid: 102100 }
         });
 
-        // Polygon Renderer with NO FILL and BLACK OUTLINES
-        const polygonRenderer = {
-            type: "simple",
-            symbol: {
-                type: "simple-fill",
-                color: [0, 0, 0, 0], // Transparent / No fill
-                outline: {
-                    color: [0, 0, 0, 1], // Pure black outline
-                    width: 1.25
-                }
-            }
-        };
-
         // ======================================================
-        // FEATURE CLASSES (LAYERS) SECTION
+        // FEATURE CLASSES (LAYERS) SECTION WITH ALL 7 COUNTY URLS
         // ======================================================
-        // Polygon Renderer with NO FILL and BLACK OUTLINES
-        const polygonRenderer = {
-            type: "simple",
-            symbol: {
-                type: "simple-fill",
-                color: [0, 0, 0, 0], // Transparent / No fill
-                outline: {
-                    color: [0, 0, 0, 1], // Pure black outline
-                    width: 1.25
-                }
-            }
-        };
         const mainMap = new Map({
             basemap: new Basemap({
                 baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
@@ -818,6 +806,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 mainGraphicsLayer
             ]
         });
+
         mainView = new MapView({
             container: mainViewDivId,
             map: mainMap,
