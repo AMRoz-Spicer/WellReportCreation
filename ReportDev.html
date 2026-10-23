@@ -370,12 +370,12 @@ function updateReportTitles(){
         
         const header1 = document.getElementById(`pageHeaderEl_p1_${sectionIdx}`);
         if(header1){
-            header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.}) [Section ${sectionIdx + 1} of ${totalSections}]`;
+            header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
         }
 
         const header2 = document.getElementById(`pageHeaderEl_p2_${sectionIdx}`);
         if(header2){
-            header2.textContent = `${title} - Regional Context Map (Wells ${start}-${end} of ${uniqueWellIds.}) [Section ${sectionIdx + 1} of ${totalSections}]`;
+            header2.textContent = `${title} - Regional Context Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
         }
     });
 }
