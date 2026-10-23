@@ -916,7 +916,7 @@ async function initReport(){
                 grid.innerHTML = "";
                 sectionWellIds.forEach(wellId => {
                     const rowsData = lithologyMap[wellId] || [];
-                    const intervals = rowsToInfo ? rowsToIntervals(rowsData) : rowsToIntervals(rowsData);
+                    const intervals = rowsToIntervals ? rowsToIntervals(rowsData) : rowsToIntervals(rowsData);
                     const ownMax = intervals.length ? Math.max(...intervals.map(i => i.bottomDepth)) : 0;
                     grid.appendChild(buildCard(wellId, intervals, Math.max(chartH, 26), ownMax));
                 });
