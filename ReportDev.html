@@ -883,7 +883,7 @@ async function initReport(){
         lithologyMap = lithMap;
 
         const cleanIds = uniqueWellIds.map(id => `'${String(id).replaceAll("'", "''")}'`);
-        const where = cleanIds. === 1 
+        const where = cleanIds.length === 1 
             ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
             : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
 
