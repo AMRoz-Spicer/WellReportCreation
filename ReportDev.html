@@ -660,17 +660,31 @@ function loadArcGIS(){
     });
 }
 
-// Spatially query parcel geometries for the section wells and calculate acreage
+// ======================================================
+// ENHANCED PARCEL ACREAGE SPATIAL QUERY & CALCULATION
+// ======================================================
 async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
     if (!PARCEL_LAYER_URL || PARCEL_LAYER_URL.includes("YOUR_PARCEL") || sectionFeatures.length === 0) {
         return null;
     }
 
     try {
+        // 1. Gather all well geometries for this section page
         const wellGeometries = sectionFeatures.map(f => f.geometry);
         
+        // 2. Create a unified bounding envelope or union of all well points in this section 
+        // with a small buffer (e.g., 50 meters) to reliably capture enclosing/touching parcels.
+        let searchGeometry = wellGeometries[0];
+        if (wellGeometries.length > 1) {
+            searchGeometry = arcgisSdk.geometryEngine.union(wellGeometries);
+        }
+        
+        // Buffer the geometry slightly (50 meters) to ensure parcels enclosing the wells are hit
+        const bufferedGeometry = arcgisSdk.geometryEngine.buffer(searchGeometry, 50, "meters") || searchGeometry;
+
+        // 3. Execute spatial query against the parcel FeatureLayer using 'contains' or 'intersects'
         const parcelResults = await arcgisSdk.query.executeQueryJSON(PARCEL_LAYER_URL, {
-            geometry: wellGeometries[0], // Spatial intersect check
+            geometry: bufferedGeometry,
             spatialRelationship: "intersects",
             outFields: ["*"],
             returnGeometry: true,
@@ -681,20 +695,22 @@ async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
             return [];
         }
 
+        // 4. Compute geodesic area in Acres for each matched parcel
         const parcelSummary = parcelResults.features.map((parcel, idx) => {
             const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcel.geometry, "acres");
             const attrs = parcel.attributes;
-            const parcelId = attrs.PARCEL_ID || attrs.PIN || attrs.TAXID || attrs.OBJECTID || `Parcel #${idx + 1}`;
+            // Fallback attribute check across multiple common county schema naming conventions
+            const parcelId = attrs.PARCEL_ID || attrs.PIN || attrs.TAXID || attrs.PARCL_ID || attrs.ACCOUNTID || attrs.OBJECTID || `Parcel #${idx + 1}`;
             
             return {
                 id: parcelId,
-                acres: areaAcres > 0 ? areaAcres.toFixed(2) : "N/A"
+                acres: areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "N/A"
             };
         });
 
         return parcelSummary;
     } catch (err) {
-        console.warn("Parcel acreage calculation skipped/error:", err);
+        console.warn("Parcel acreage calculation warning:", err);
         return null;
     }
 }
