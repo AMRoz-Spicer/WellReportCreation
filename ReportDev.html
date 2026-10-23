@@ -691,7 +691,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             }),
             layers: [
                 // INSERT YOUR 7 LAYER URLS BELOW:
-                new FeatureLayer({ 'https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0' }),
+                new FeatureLayer({ url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0" }),
                 new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87" }),
                 new FeatureLayer({ url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0" }),
                 new FeatureLayer({ url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3" }),
