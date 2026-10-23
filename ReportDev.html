@@ -156,7 +156,7 @@ button:disabled {
 
 /* Page 2 Section: Split 50/50 between Context Map and Acreage Table */
 .page2-split-section {
-    height: 720px;
+    height: 730px;
     display: flex;
     gap: 12px;
     flex: none;
@@ -634,7 +634,7 @@ function buildCard(wellId, intervals, chartH, depthForScale){
 }
 
 // ======================================================
-// ARCGIS MAPS & ACREAGE CALCULATION ENGINE
+// ARCGIS MAPS & STRICT WELL-MATCHED ACREAGE ENGINE
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
@@ -660,53 +660,45 @@ function loadArcGIS(){
     });
 }
 
-// ======================================================
-// ENHANCED PARCEL ACREAGE SPATIAL QUERY & CALCULATION
-// ======================================================
+// Strictly query parcels containing the wells and map to Well ID
 async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
     if (!PARCEL_LAYER_URL || PARCEL_LAYER_URL.includes("YOUR_PARCEL") || sectionFeatures.length === 0) {
         return null;
     }
 
     try {
-        // 1. Gather all well geometries for this section page
-        const wellGeometries = sectionFeatures.map(f => f.geometry);
-        
-        // 2. Create a unified bounding envelope or union of all well points in this section 
-        // with a small buffer (e.g., 50 meters) to reliably capture enclosing/touching parcels.
-        let searchGeometry = wellGeometries[0];
-        if (wellGeometries.length > 1) {
-            searchGeometry = arcgisSdk.geometryEngine.union(wellGeometries);
+        const parcelSummary = [];
+        const processedParcelKeys = new Set();
+
+        for (const feature of sectionFeatures) {
+            const wellId = feature.attributes[WELLS_ID_FIELD];
+            const wellGeo = feature.geometry;
+
+            const parcelResults = await arcgisSdk.query.executeQueryJSON(PARCEL_LAYER_URL, {
+                geometry: wellGeo,
+                spatialRelationship: "contains", // Parcel strictly contains the well point
+                outFields: ["*"],
+                returnGeometry: true,
+                outSpatialReference: { wkid: 102100 }
+            });
+
+            if (parcelResults.features && parcelResults.features.length > 0) {
+                for (const parcel of parcelResults.features) {
+                    const attrs = parcel.attributes;
+                    const parcelKey = attrs.OBJECTID || attrs.PARCEL_ID || attrs.PIN || attrs.TAXID;
+
+                    if (parcelKey && !processedParcelKeys.has(parcelKey)) {
+                        processedParcelKeys.add(parcelKey);
+                        const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcel.geometry, "acres");
+                        
+                        parcelSummary.push({
+                            wellId: String(wellId),
+                            acres: areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "N/A"
+                        });
+                    }
+                }
+            }
         }
-        
-        // Buffer the geometry slightly (50 meters) to ensure parcels enclosing the wells are hit
-        const bufferedGeometry = arcgisSdk.geometryEngine.buffer(searchGeometry, 50, "meters") || searchGeometry;
-
-        // 3. Execute spatial query against the parcel FeatureLayer using 'contains' or 'intersects'
-        const parcelResults = await arcgisSdk.query.executeQueryJSON(PARCEL_LAYER_URL, {
-            geometry: bufferedGeometry,
-            spatialRelationship: "intersects",
-            outFields: ["*"],
-            returnGeometry: true,
-            outSpatialReference: { wkid: 102100 }
-        });
-
-        if (!parcelResults.features || parcelResults.features.length === 0) {
-            return [];
-        }
-
-        // 4. Compute geodesic area in Acres for each matched parcel
-        const parcelSummary = parcelResults.features.map((parcel, idx) => {
-            const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcel.geometry, "acres");
-            const attrs = parcel.attributes;
-            // Fallback attribute check across multiple common county schema naming conventions
-            const parcelId = attrs.PARCEL_ID || attrs.PIN || attrs.TAXID || attrs.PARCL_ID || attrs.ACCOUNTID || attrs.OBJECTID || `Parcel #${idx + 1}`;
-            
-            return {
-                id: parcelId,
-                acres: areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "N/A"
-            };
-        });
 
         return parcelSummary;
     } catch (err) {
@@ -914,7 +906,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         document.getElementById(indexCaptionId).innerHTML =
             `Regional Index Context | Scale 1:${indexScaleText} | Topographic Basemap`;
 
-        // Calculate Parcel Acreage & Render Table
+        // Calculate Parcel Acreage & Render Table with Well IDs
         const parcelData = await calculateParcelAcreage(sectionFeatures, arcgis);
         const acreageDiv = document.getElementById(acreageContainerId);
         
@@ -922,7 +914,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             let totalAcres = parcelData.reduce((sum, p) => sum + (parseFloat(p.acres) || 0), 0);
             let rowsHtml = parcelData.map(p => `
                 <tr>
-                    <td><strong>${p.id}</strong></td>
+                    <td><strong>Well ${p.wellId}</strong></td>
                     <td>${p.acres} Acres</td>
                 </tr>
             `).join("");
@@ -932,8 +924,8 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 <table class="acreage-table">
                     <thead>
                         <tr>
-                            <th>Parcel ID / Tax PIN</th>
-                            <th>Calculated Area</th>
+                            <th>Well ID</th>
+                            <th>Enclosing Parcel Area</th>
                         </tr>
                     </thead>
                     <tbody>
