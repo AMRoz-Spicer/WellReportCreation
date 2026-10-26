@@ -30,17 +30,17 @@ body {
 }
 
 #controls label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     color: #333;
 }
 
 #titleInput {
     padding: 6px 10px;
-    font-size: 14px;
-    width: 320px;
+    font-size: 13px;
     border: 1px solid #888;
     border-radius: 3px;
+    width: 280px;
 }
 
 button {
@@ -154,73 +154,92 @@ button:disabled {
     flex: none;
 }
 
-/* Page 2 Section: Split 50/50 between Context Map and Acreage Table */
-.page2-split-section {
+/* ======================================================
+   PAGE 2: 4-QUADRANT GRID LAYOUT
+   ====================================================== */
+.page2-grid-section {
     height: 730px;
-    display: flex;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 10px;
     flex: none;
 }
 
-.page2-left-map {
-    flex: 1;
+.quadrant-box {
+    border: 1px solid #bbb;
+    background: #fafafa;
+    padding: 8px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 4px;
+    overflow: hidden;
+    position: relative;
 }
 
-.page2-right-table {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    border: 1px solid #bbb;
-    background: #fafafa;
-    padding: 10px;
-    box-sizing: border-box;
-    overflow-y: auto;
-}
-
-.table-header-title {
-    font-size: 12px;
+.quadrant-title {
+    font-size: 11px;
     font-weight: bold;
     color: #005e95;
     border-bottom: 2px solid #005e95;
-    padding-bottom: 4px;
-    margin-bottom: 6px;
+    padding-bottom: 2px;
+    flex: none;
+}
+
+/* Calculation Form Styles (Quadrant 4) */
+.calc-form-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 10px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.calc-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff;
+    padding: 4px 6px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+.calc-row label {
+    font-weight: bold;
+    color: #333;
+}
+
+.calc-row input {
+    width: 120px;
+    padding: 3px 6px;
+    font-size: 10px;
+    border: 1px solid #888;
+    border-radius: 2px;
+    text-align: right;
 }
 
 .acreage-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 10px;
+    font-size: 9px;
+    margin-top: 4px;
 }
 
 .acreage-table th {
     background: #005e95;
     color: white;
     text-align: left;
-    padding: 6px 8px;
+    padding: 4px 6px;
     font-weight: bold;
 }
 
 .acreage-table td {
-    padding: 6px 8px;
+    padding: 4px 6px;
     border-bottom: 1px solid #ddd;
     color: #333;
-}
-
-.acreage-table tr:nth-child(even) {
-    background-color: #f2f2f2;
-}
-
-.summary-card {
-    background: #eef6fa;
-    border-left: 4px solid #005e95;
-    padding: 8px 12px;
-    margin-top: 10px;
-    font-size: 10.5px;
-    line-height: 1.4;
 }
 
 .map-wrapper {
@@ -352,10 +371,10 @@ button:disabled {
 }
 
 .map-caption {
-    height: 16px;
+    height: 14px;
     flex: none;
-    font-size: 8px;
-    line-height: 1.1;
+    font-size: 7.5px;
+    line-height: 1;
     overflow: hidden;
     color: #333;
 }
@@ -365,7 +384,7 @@ button:disabled {
 <body>
 
 <div id="controls">
-    <label for="titleInput">Report Title:</label>
+    <label for="titleInput">Title:</label>
     <input type="text" id="titleInput" value="Lithology Report" oninput="updateReportTitles()">
     <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
 </div>
@@ -376,7 +395,7 @@ button:disabled {
 
 <script>
 // ---------- Settings ----------
-const WELLS_PER_PAGE = 3; // Exactly 3 charts per landscape page
+const WELLS_PER_PAGE = 3; 
 
 const WELLS_LAYER_URL = "https://gisagoegle.state.mi.us/arcgis/rest/services/EGLE/DwOpenData/MapServer/3";
 const WELLS_ID_FIELD  = "WELLID";
@@ -386,7 +405,9 @@ const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_T
 
 const MIN_MAP_SPAN_M = 600;
 
-// ---------- MULTI-COUNTY PARCEL FEATURE LAYER URLS ----------
+// Hardcoded Wetland Layer URL (Replace with your actual wetland FeatureServer / MapServer URL)
+const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/rest/services/EGLE_Part303StateWetlandInventory/FeatureServer/0";
+
 const PARCEL_LAYER_URLS = [
     "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
     "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87",
@@ -397,16 +418,12 @@ const PARCEL_LAYER_URLS = [
     "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0"
 ];
 
-// Global clean outline / transparent fill renderer definition
 const polygonRenderer = {
     type: "simple",
     symbol: {
         type: "simple-fill",
-        color: [0, 0, 0, 0], // Transparent / No fill
-        outline: {
-            color: [0, 0, 0, 1], // Pure black outline
-            width: 1.25
-        }
+        color: [0, 0, 0, 0],
+        outline: { color: [0, 0, 0, 1], width: 1.25 }
     }
 };
 
@@ -418,11 +435,7 @@ const titleParam = params.get("title") || params.get("reportTitle") || "Litholog
 document.getElementById("titleInput").value = titleParam;
 document.title = "FinalV1 - " + titleParam;
 
-const allIds = wellsParam
-    .split(",")
-    .map(id => id.trim())
-    .filter(id => id.length > 0);
-
+const allIds = wellsParam.split(",").map(id => id.trim()).filter(id => id.length > 0);
 const uniqueWellIds = [...new Set(allIds)];
 const totalSections = Math.max(Math.ceil(uniqueWellIds.length / WELLS_PER_PAGE), 1);
 
@@ -442,33 +455,21 @@ function updateReportTitles(){
         const end = Math.min((sectionIdx + 1) * WELLS_PER_PAGE, uniqueWellIds.length);
         
         const header1 = document.getElementById(`pageHeaderEl_p1_${sectionIdx}`);
-        if(header1){
-            header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
-        }
+        if(header1) header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
 
         const header2 = document.getElementById(`pageHeaderEl_p2_${sectionIdx}`);
-        if(header2){
-            header2.textContent = `${title} - Context Map & Parcel Acreage Analysis (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
-        }
+        if(header2) header2.textContent = `${title} - Wetlands, Truck Travel, Contours & Data Calculations [Section ${sectionIdx + 1} of ${totalSections}]`;
     });
 }
 
 function getColor(lithology){
     const lith = String(lithology || "").toLowerCase();
-
     if(lith.includes("sand")) return "#f4d03f";
     if(lith.includes("silt")) return "#c2b280";
     if(lith.includes("clay")) return "#a67c52";
     if(lith.includes("gravel")) return "#9e9e9e";
     if(lith.includes("till") || lith.includes("diamicton")) return "#b0c4de";
-    if(
-        lith.includes("rock") ||
-        lith.includes("bedrock") ||
-        lith.includes("limestone") ||
-        lith.includes("shale") ||
-        lith.includes("dolomite")
-    ) return "#95a5a6";
-
+    if(lith.includes("rock") || lith.includes("bedrock") || lith.includes("limestone") || lith.includes("shale") || lith.includes("dolomite")) return "#95a5a6";
     return "#d5d8dc";
 }
 
@@ -482,52 +483,31 @@ function buildLegend(){
         ["#95a5a6", "Bedrock"],
         ["#d5d8dc", "Other"]
     ];
-
-    return items.map(([color, label]) =>
-        `<div class="legend-item"><span class="swatch" style="background:${color}"></span>${label}</div>`
-    ).join("");
+    return items.map(([color, label]) => `<div class="legend-item"><span class="swatch" style="background:${color}"></span>${label}</div>`).join("");
 }
 
 // ======================================================
-// BATCHED LITHOLOGY FETCHING & LAYER MERGING
+// LITHOLOGY FETCHING
 // ======================================================
 async function fetchAllLithology(wellIdsList){
     if (!wellIdsList || wellIdsList.length === 0) return {};
-
     const cleanIds = wellIdsList.map(id => `'${String(id).replaceAll("'","''")}'`);
-    const whereClause = cleanIds.length === 1 
-        ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
-        : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
+    const whereClause = cleanIds.length === 1 ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
 
     const queryParams = new URLSearchParams({
-        f: "json",
-        where: whereClause,
-        outFields: "*",
-        returnGeometry: "false",
-        orderByFields: `${WELLS_ID_FIELD}, SEQ_NUM`
+        f: "json", where: whereClause, outFields: "*", returnGeometry: "false", orderByFields: `${WELLS_ID_FIELD}, SEQ_NUM`
     });
 
     try {
         const response = await fetch(`${lithologyQueryUrl}?${queryParams}`);
         const data = await response.json();
-
         const map = {};
         wellIdsList.forEach(id => map[id] = []);
-
         if(data.features){
             data.features.forEach(f => {
                 const attr = f.attributes;
                 const id = String(attr[WELLS_ID_FIELD] || attr.WELLID || "").trim();
-                if(map[id]){
-                    map[id].push(attr);
-                } else {
-                    for (let key of wellIdsList) {
-                        if (String(key).trim() === id) {
-                            map[key].push(attr);
-                            break;
-                        }
-                    }
-                }
+                if(map[id]) map[id].push(attr);
             });
         }
         return map;
@@ -543,13 +523,7 @@ function rowsToIntervals(rows){
         const thickness = Number(row.THICKNESS || row.Thick) || 0;
         const topDepth = Math.max(bottomDepth - thickness, 0);
         const lithology = row.PRIM_LITH || row.LITHOLOGY || row.PRIMARY_LITH || row.LITH || "Unknown";
-
-        return {
-            topDepth,
-            bottomDepth,
-            thickness: Math.max(thickness, 1),
-            lithology
-        };
+        return { topDepth, bottomDepth, thickness: Math.max(thickness, 1), lithology };
     });
 
     const merged = [];
@@ -570,108 +544,74 @@ function buildCard(wellId, intervals, chartH, depthForScale){
     card.className = "well-card";
 
     if(!intervals || intervals.length === 0){
-        card.innerHTML = `
-            <div class="well-title">Well ${wellId}</div>
-            <div class="no-data">No lithology data found.</div>`;
+        card.innerHTML = `<div class="well-title">Well ${wellId}</div><div class="no-data">No lithology data found.</div>`;
         return card;
     }
 
     const maxDepth = Math.max(...intervals.map(i => i.bottomDepth));
     const scale = depthForScale > 0 ? chartH / depthForScale : 1;
     const columnHeight = Math.max(Math.round(maxDepth * scale), 6);
-
     const rawHeights = intervals.map(i => i.thickness * scale);
     const MIN_LAYER_PX = 12;
     let totalDeficit = 0;
     let thickLayerIndices = [];
 
     rawHeights.forEach((h, idx) => {
-        if (h < MIN_LAYER_PX) {
-            totalDeficit += (MIN_LAYER_PX - h);
-        } else {
-            thickLayerIndices.push(idx);
-        }
+        if (h < MIN_LAYER_PX) totalDeficit += (MIN_LAYER_PX - h);
+        else thickLayerIndices.push(idx);
     });
 
     const totalThickPx = thickLayerIndices.reduce((sum, idx) => sum + rawHeights[idx], 0);
-
     const finalHeights = rawHeights.map((h, idx) => {
-        if (h < MIN_LAYER_PX) {
-            return MIN_LAYER_PX;
-        } else if (thickLayerIndices.includes(idx) && totalThickPx > 0) {
+        if (h < MIN_LAYER_PX) return MIN_LAYER_PX;
+        else if (thickLayerIndices.includes(idx) && totalThickPx > 0) {
             const shareOfDeficit = (h / totalThickPx) * totalDeficit;
             return Math.max(MIN_LAYER_PX, h - shareOfDeficit);
         }
         return h;
     });
 
-    let intervalHtml = "";
-    let sideLabelsHtml = "";
-    let currentTopPx = 0;
-
+    let intervalHtml = "", sideLabelsHtml = "", currentTopPx = 0;
     intervals.forEach((interval, idx) => {
         const height = finalHeights[idx];
         const color = getColor(interval.lithology);
-
         sideLabelsHtml += `<div class="side-label-absolute" style="top:${currentTopPx}px; height:${height}px;" title="${interval.topDepth}-${interval.bottomDepth}ft: ${interval.lithology}"><strong>${interval.topDepth}-${interval.bottomDepth}ft</strong>: ${interval.lithology}</div>`;
-
-        intervalHtml += `
-        <div class="interval" style="top:${currentTopPx}px; height:${height}px; background:${color};"></div>`;
-
+        intervalHtml += `<div class="interval" style="top:${currentTopPx}px; height:${height}px; background:${color};"></div>`;
         currentTopPx += height;
     });
 
     card.innerHTML = `
         <div class="well-title">Well ${wellId}</div>
         <div class="card-body-split">
-            <div class="side-labels-column" style="height:${columnHeight}px;">
-                ${sideLabelsHtml}
-            </div>
+            <div class="side-labels-column" style="height:${columnHeight}px;">${sideLabelsHtml}</div>
             <div class="profile-wrap">
                 <div class="depth-axis" style="height:${columnHeight}px">
                     <span style="top:0">0ft</span>
                     <span style="top:${Math.max(columnHeight - 8, 4)}px">${maxDepth}ft</span>
                 </div>
-                <div class="log-column" style="height:${columnHeight}px">
-                    ${intervalHtml}
-                </div>
+                <div class="log-column" style="height:${columnHeight}px">${intervalHtml}</div>
             </div>
         </div>`;
-
     return card;
 }
 
 // ======================================================
-// ARCGIS MAPS & MULTI-COUNTY BUFFERED ACREAGE ENGINE
+// ARCGIS MAPS & ACREAGE ENGINE
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
-        if(typeof require !== "function"){
-            reject(new Error("ArcGIS Maps SDK did not load."));
-            return;
-        }
+        if(typeof require !== "function"){ reject(new Error("ArcGIS SDK missing.")); return; }
         require([
-            "esri/Map",
-            "esri/views/MapView",
-            "esri/Basemap",
-            "esri/layers/TileLayer",
-            "esri/layers/FeatureLayer",
-            "esri/layers/GraphicsLayer",
-            "esri/Graphic",
-            "esri/geometry/Extent",
-            "esri/geometry/geometryEngine",
-            "esri/rest/query",
-            "esri/core/reactiveUtils"
+            "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
+            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/core/reactiveUtils"
         ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils) => {
             resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils });
         });
     });
 }
 
-// Query parcels across all 7 county layers using a buffered point intersection
 async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
     if (sectionFeatures.length === 0) return null;
-
     try {
         const parcelSummary = [];
         const processedWellIds = new Set();
@@ -680,13 +620,11 @@ async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
             const wellId = String(feature.attributes[WELLS_ID_FIELD]);
             if (processedWellIds.has(wellId)) continue;
 
-            // Apply a 1-meter buffer to ensure reliable geometry intersection across REST services
             const bufferedPoint = arcgisSdk.geometryEngine.buffer(feature.geometry, 1, "meters");
             let foundParcel = false;
 
             for (const url of PARCEL_LAYER_URLS) {
                 if (foundParcel) break;
-
                 try {
                     const parcelResults = await arcgisSdk.query.executeQueryJSON(url, {
                         geometry: bufferedPoint || feature.geometry,
@@ -699,24 +637,18 @@ async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
                     if (parcelResults.features && parcelResults.features.length > 0) {
                         const parcel = parcelResults.features[0];
                         const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcel.geometry, "acres");
-
                         parcelSummary.push({
                             wellId: wellId,
-                            acres: areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "N/A"
+                            acres: areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "0.00"
                         });
-
                         processedWellIds.add(wellId);
                         foundParcel = true;
                     }
-                } catch (layerErr) {
-                    // Skip layers that throw cross-origin or schema errors
-                }
+                } catch (e) {}
             }
         }
-
         return parcelSummary;
     } catch (err) {
-        console.warn("Parcel acreage calculation warning:", err);
         return null;
     }
 }
@@ -726,97 +658,54 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     const mainShotImgId = `mapShot_main_${sectionIdx}`;
     const mainCaptionId = `mapCaption_main_${sectionIdx}`;
 
-    const indexViewDivId = `mapView_index_${sectionIdx}`;
-    const indexShotImgId = `mapShot_index_${sectionIdx}`;
-    const indexCaptionId = `mapCaption_index_${sectionIdx}`;
-    const acreageContainerId = `acreageContainer_${sectionIdx}`;
+    const truckViewDivId = `mapView_truck_${sectionIdx}`;
+    const truckShotImgId = `mapShot_truck_${sectionIdx}`;
+    const truckCaptionId = `mapCaption_truck_${sectionIdx}`;
+
+    const wetlandViewDivId = `mapView_wetland_${sectionIdx}`;
+    const wetlandShotImgId = `mapShot_wetland_${sectionIdx}`;
+    const wetlandCaptionId = `mapCaption_wetland_${sectionIdx}`;
+
+    const contourViewDivId = `mapView_contour_${sectionIdx}`;
+    const contourShotImgId = `mapShot_contour_${sectionIdx}`;
+    const contourCaptionId = `mapCaption_contour_${sectionIdx}`;
+
+    const calcFormContainerId = `calcFormContainer_${sectionIdx}`;
 
     const sectionFeatures = allFeatures.filter(f => sectionWellIds.includes(String(f.attributes[WELLS_ID_FIELD])));
+    if(sectionFeatures.length === 0) return;
 
-    if(sectionFeatures.length === 0){
-        document.getElementById(mainCaptionId).textContent = "No matching well locations for this section.";
-        document.getElementById(indexCaptionId).textContent = "No matching regional context for this section.";
-        return;
-    }
-
-    let mainView = null;
-    let indexView = null;
+    let mainView = null, truckView = null, wetlandView = null, contourView = null;
 
     try {
         const arcgis = await loadArcGIS();
         const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
 
-        // --- PAGE 1 MAIN MAP ---
+        // --- 1. MAIN WELL MAP (Page 1) ---
         const mainGraphicsLayer = new GraphicsLayer();
-
         allFeatures.forEach(f => {
             const id = f.attributes[WELLS_ID_FIELD];
             const isCurrentSection = sectionWellIds.includes(String(id));
-
             if (isCurrentSection) {
-                mainGraphicsLayer.add(new Graphic({
-                    geometry: f.geometry,
-                    symbol: {
-                        type: "simple-marker",
-                        style: "circle",
-                        color: [230, 30, 30, 1],
-                        size: 10,
-                        outline: { color: [255, 255, 255, 1], width: 1.5 }
-                    }
-                }));
-
-                mainGraphicsLayer.add(new Graphic({
-                    geometry: f.geometry,
-                    symbol: {
-                        type: "text",
-                        text: String(id),
-                        color: [255, 255, 255, 1],
-                        haloColor: [0, 0, 0, 1],
-                        haloSize: "2px",
-                        yoffset: 10,
-                        font: { size: 9, weight: "bold" }
-                    }
-                }));
+                mainGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [230, 30, 30, 1], size: 10, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
+                mainGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "text", text: String(id), color: [255, 255, 255, 1], haloColor: [0, 0, 0, 1], haloSize: "2px", yoffset: 10, font: { size: 9, weight: "bold" } } }));
             } else {
-                mainGraphicsLayer.add(new Graphic({
-                    geometry: f.geometry,
-                    symbol: {
-                        type: "simple-marker",
-                        style: "circle",
-                        color: [140, 140, 140, 0.8],
-                        size: 7,
-                        outline: { color: [255, 255, 255, 0.8], width: 1 }
-                    }
-                }));
+                mainGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [140, 140, 140, 0.8], size: 7, outline: { color: [255, 255, 255, 0.8], width: 1 } } }));
             }
         });
 
         const xs = sectionFeatures.map(f => f.geometry.x);
         const ys = sectionFeatures.map(f => f.geometry.y);
-
         let xmin = Math.min(...xs), xmax = Math.max(...xs);
         let ymin = Math.min(...ys), ymax = Math.max(...ys);
-
-        const cx = (xmin + xmax) / 2;
-        const cy = (ymin + ymax) / 2;
+        const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
         const halfW = Math.max((xmax - xmin) / 2 * 1.5, MIN_MAP_SPAN_M / 2);
         const halfH = Math.max((ymax - ymin) / 2 * 1.5, MIN_MAP_SPAN_M / 2);
 
-        const mainExtent = new Extent({
-            xmin: cx - halfW,
-            xmax: cx + halfW,
-            ymin: cy - halfH,
-            ymax: cy + halfH,
-            spatialReference: { wkid: 102100 }
-        });
+        const mainExtent = new Extent({ xmin: cx - halfW, xmax: cx + halfW, ymin: cy - halfH, ymax: cy + halfH, spatialReference: { wkid: 102100 } });
 
-        // ======================================================
-        // FEATURE CLASSES (LAYERS) SECTION WITH ALL 7 COUNTY URLS
-        // ======================================================
         const mainMap = new Map({
-            basemap: new Basemap({
-                baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ]
-            }),
+            basemap: new Basemap({ baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ] }),
             layers: [
                 new FeatureLayer({ url: PARCEL_LAYER_URLS[0], renderer: polygonRenderer }),
                 new FeatureLayer({ url: PARCEL_LAYER_URLS[1], renderer: polygonRenderer }),
@@ -829,146 +718,138 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             ]
         });
 
-        mainView = new MapView({
-            container: mainViewDivId,
-            map: mainMap,
-            constraints: { snapToZoom: false },
-            ui: { components: [] }
-        });
+        mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- PAGE 2 INDEX MAP ---
-        const indexGraphicsLayer = new GraphicsLayer();
-
+        // --- 2. TRUCK TRAVEL MAP (Top-Right Quadrant) ---
+        const truckGraphicsLayer = new GraphicsLayer();
         sectionFeatures.forEach(f => {
-            indexGraphicsLayer.add(new Graphic({
-                geometry: f.geometry,
-                symbol: {
-                    type: "simple-marker",
-                    style: "circle",
-                    color: [255, 255, 0, 1],
-                    size: 7,
-                    outline: { color: [0, 0, 0, 1], width: 1 }
-                }
-            }));
+            truckGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [255, 255, 0, 1], size: 7, outline: { color: [0, 0, 0, 1], width: 1 } } }));
+        });
+        truckGraphicsLayer.add(new Graphic({ geometry: mainExtent, symbol: { type: "simple-fill", color: [255, 0, 0, 0.15], outline: { color: [255, 0, 0, 1], width: 2 } } }));
+
+        const truckScaleFactor = 12;
+        const truckExtent = new Extent({ xmin: cx - (halfW * truckScaleFactor), xmax: cx + (halfW * truckScaleFactor), ymin: cy - (halfH * truckScaleFactor), ymax: cy + (halfH * truckScaleFactor), spatialReference: { wkid: 102100 } });
+
+        const truckMap = new Map({
+            basemap: new Basemap({ baseLayers: [ new TileLayer({ url: TOPO_URL }) ] }),
+            layers: [ truckGraphicsLayer ]
         });
 
-        indexGraphicsLayer.add(new Graphic({
-            geometry: mainExtent,
-            symbol: {
-                type: "simple-fill",
-                color: [255, 0, 0, 0.15],
-                outline: { color: [255, 0, 0, 1], width: 2 }
-            }
-        }));
+        truckView = new MapView({ container: truckViewDivId, map: truckMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        const indexScaleFactor = 12;
-        const indexExtent = new Extent({
-            xmin: cx - (halfW * indexScaleFactor),
-            xmax: cx + (halfW * indexScaleFactor),
-            ymin: cy - (halfH * indexScaleFactor),
-            ymax: cy + (halfH * indexScaleFactor),
-            spatialReference: { wkid: 102100 }
+        // --- 3. WETLAND MAP (Top-Left Quadrant - Hardcoded Layer URL) ---
+        const wetlandLayers = [];
+        if (WETLAND_LAYER_URL && !WETLAND_LAYER_URL.includes("your-gis-server")) {
+            wetlandLayers.push(new FeatureLayer({ url: WETLAND_LAYER_URL }));
+        }
+        const wetlandGraphicsLayer = new GraphicsLayer();
+        sectionFeatures.forEach(f => {
+            wetlandGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [0, 150, 255, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
+        });
+        wetlandLayers.push(wetlandGraphicsLayer);
+
+        const wetlandMap = new Map({
+            basemap: new Basemap({ baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ] }),
+            layers: wetlandLayers
         });
 
-        const indexMap = new Map({
-            basemap: new Basemap({
-                baseLayers: [ new TileLayer({ url: TOPO_URL }) ]
-            }),
-            layers: [ indexGraphicsLayer ]
+        wetlandView = new MapView({ container: wetlandViewDivId, map: wetlandMap, constraints: { snapToZoom: false }, ui: { components: [] } });
+
+        // --- 4. CONTOUR MAP (Bottom-Left Quadrant - Blank Template) ---
+        const contourGraphicsLayer = new GraphicsLayer();
+        sectionFeatures.forEach(f => {
+            contourGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [50, 180, 50, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
         });
 
-        indexView = new MapView({
-            container: indexViewDivId,
-            map: indexMap,
-            constraints: { snapToZoom: false },
-            ui: { components: [] }
+        const contourMap = new Map({
+            basemap: new Basemap({ baseLayers: [ new TileLayer({ url: TOPO_URL }) ] }),
+            layers: [ contourGraphicsLayer ]
         });
 
-        await Promise.all([ mainView.when(), indexView.when() ]);
+        contourView = new MapView({ container: contourViewDivId, map: contourMap, constraints: { snapToZoom: false }, ui: { components: [] } });
+
+        // --- RENDER VIEWS ---
+        await Promise.all([ mainView.when(), truckView.when(), wetlandView.when(), contourView.when() ]);
         
         await mainView.goTo(mainExtent, { animate: false });
-        await indexView.goTo(indexExtent, { animate: false });
+        await truckView.goTo(truckExtent, { animate: false });
+        await wetlandView.goTo(mainExtent, { animate: false });
+        await contourView.goTo(mainExtent, { animate: false });
 
         const mapReadyPromise = Promise.all([
-            reactiveUtils.whenOnce(() => mainView.stationary && indexView.stationary),
-            reactiveUtils.whenOnce(() => !mainView.updating && !indexView.updating)
+            reactiveUtils.whenOnce(() => mainView.stationary && truckView.stationary && wetlandView.stationary && contourView.stationary),
+            reactiveUtils.whenOnce(() => !mainView.updating && !truckView.updating && !wetlandView.updating && !contourView.updating)
         ]);
-        const timeoutPromise = new Promise(resolve => setTimeout(resolve, 8000));
-        await Promise.race([mapReadyPromise, timeoutPromise]);
+        await Promise.race([mapReadyPromise, new Promise(resolve => setTimeout(resolve, 8000))]);
 
         const mainShot = await mainView.takeScreenshot({ format: "jpg", quality: 100 });
-        const indexShot = await indexView.takeScreenshot({ format: "jpg", quality: 100 });
-        
-        const mainScaleText = Math.round(mainView.scale).toLocaleString();
-        const indexScaleText = Math.round(indexView.scale).toLocaleString();
+        const truckShot = await truckView.takeScreenshot({ format: "jpg", quality: 100 });
+        const wetlandShot = await wetlandView.takeScreenshot({ format: "jpg", quality: 100 });
+        const contourShot = await contourView.takeScreenshot({ format: "jpg", quality: 100 });
 
-        const mainImg = document.getElementById(mainShotImgId);
-        mainImg.src = mainShot.dataUrl;
-        await mainImg.decode();
-        mainImg.style.display = "block";
-        document.getElementById(mainViewDivId).style.display = "none";
+        // Inject Images
+        const setImg = (id, shot, viewDivId, captionId, captionText) => {
+            const img = document.getElementById(id);
+            img.src = shot.dataUrl;
+            img.style.display = "block";
+            document.getElementById(viewDivId).style.display = "none";
+            document.getElementById(captionId).textContent = captionText;
+        };
 
-        const indexImg = document.getElementById(indexShotImgId);
-        indexImg.src = indexShot.dataUrl;
-        await indexImg.decode();
-        indexImg.style.display = "block";
-        document.getElementById(indexViewDivId).style.display = "none";
+        setImg(mainShotImgId, mainShot, mainViewDivId, mainCaptionId, `Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${Math.round(mainView.scale).toLocaleString()}`);
+        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, `Truck Travel Map (15, 30, 45 min zones)`);
+        setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
+        setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, `2ft Contour Map`);
 
-        document.getElementById(mainCaptionId).innerHTML =
-            `Section Wells (${sectionFeatures.length}): ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${mainScaleText} | Imagery: Esri, Maxar`;
-
-        document.getElementById(indexCaptionId).innerHTML =
-            `Regional Index Context | Scale 1:${indexScaleText} | Topographic Basemap`;
-
-        // Calculate Parcel Acreage & Render Table with Well IDs
+        // --- CALCULATIONS FORM CONTAINER (Bottom-Right Quadrant) ---
         const parcelData = await calculateParcelAcreage(sectionFeatures, arcgis);
-        const acreageDiv = document.getElementById(acreageContainerId);
+        const calcContainer = document.getElementById(calcFormContainerId);
         
+        let totalCalculatedAcres = 0;
+        let rowsHtml = "";
         if (parcelData && parcelData.length > 0) {
-            let totalAcres = parcelData.reduce((sum, p) => sum + (parseFloat(p.acres) || 0), 0);
-            let rowsHtml = parcelData.map(p => `
-                <tr>
-                    <td><strong>Well ${p.wellId}</strong></td>
-                    <td>${p.acres} Acres</td>
-                </tr>
-            `).join("");
-
-            acreageDiv.innerHTML = `
-                <div class="table-header-title">Intersecting Parcel Acreage Summary</div>
-                <table class="acreage-table">
-                    <thead>
-                        <tr>
-                            <th>Well ID</th>
-                            <th>Enclosing Parcel Area</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rowsHtml}
-                    </tbody>
-                </table>
-                <div class="summary-card">
-                    <strong>Total Combined Acreage:</strong> ${totalAcres.toFixed(2)} Acres<br>
-                    <strong>Wells Evaluated:</strong> ${sectionWellIds.join(", ")}
-                </div>
-            `;
-        } else {
-            acreageDiv.innerHTML = `
-                <div class="table-header-title">Intersecting Parcel Acreage Summary</div>
-                <div class="summary-card">
-                    <strong>Parcel Analysis:</strong> No enclosing parcel polygon dataset detected for section wells [${sectionWellIds.join(", ")}].
-                </div>
-            `;
+            totalCalculatedAcres = parcelData.reduce((sum, p) => sum + (parseFloat(p.acres) || 0), 0);
+            rowsHtml = parcelData.map(p => `<tr><td><strong>Well ${p.wellId}</strong></td><td>${p.acres} Acres</td></tr>`).join("");
         }
 
-        mainView.destroy();
-        indexView.destroy();
+        calcContainer.innerHTML = `
+            <div class="calc-form-container">
+                <table class="acreage-table">
+                    <thead><tr><th>Well ID</th><th>Enclosing Parcel Area</th></tr></thead>
+                    <tbody>${rowsHtml || '<tr><td colspan="2">No enclosing parcels detected.</td></tr>'}</tbody>
+                </table>
+                <div class="calc-row">
+                    <label>Acreage:</label>
+                    <input type="text" id="inputAcreage_${sectionIdx}" value="${totalCalculatedAcres.toFixed(2)}" oninput="updateCalculations(${sectionIdx})">
+                </div>
+                <div class="calc-row">
+                    <label>Total Price ($):</label>
+                    <input type="text" id="inputPrice_${sectionIdx}" value="0.00" oninput="updateCalculations(${sectionIdx})">
+                </div>
+                <div class="calc-row">
+                    <label>Price Per Acre ($):</label>
+                    <input type="text" id="inputPricePerAcre_${sectionIdx}" value="0.00" readonly style="background:#eee;">
+                </div>
+            </div>
+        `;
 
+        mainView.destroy(); truckView.destroy(); wetlandView.destroy(); contourView.destroy();
     } catch (err) {
         console.error("Map generation error on section " + sectionIdx, err);
-        document.getElementById(mainCaptionId).textContent = "Map rendered with fallback.";
-        document.getElementById(indexCaptionId).textContent = "Index map rendered with fallback.";
-        if (mainView) { try { mainView.destroy(); } catch(e){} }
-        if (indexView) { try { indexView.destroy(); } catch(e){} }
+    }
+}
+
+// Live calculation script for Price Per Acre
+function updateCalculations(idx) {
+    const acres = parseFloat(document.getElementById(`inputAcreage_${idx}`).value) || 0;
+    const price = parseFloat(document.getElementById(`inputPrice_${idx}`).value.replace(/[^0-9.-]+/g,"")) || 0;
+    const pricePerAcreInput = document.getElementById(`inputPricePerAcre_${idx}`);
+
+    if (acres > 0) {
+        const perAcre = price / acres;
+        pricePerAcreInput.value = "$" + perAcre.toFixed(2);
+    } else {
+        pricePerAcreInput.value = "$0.00";
     }
 }
 
@@ -987,44 +868,69 @@ async function initReport(){
     reportContainer.innerHTML = "";
 
     for(let sectionIdx = 0; sectionIdx < totalSections; sectionIdx++){
-        // --- PAGE 1 LANDSCAPE: Charts & Main Well Map ---
+        // --- PAGE 1: Charts & Main Well Map ---
         const page1Div = document.createElement("div");
         page1Div.className = "pdf-page";
         page1Div.id = `page1_${sectionIdx}`;
         page1Div.innerHTML = `
             <div class="report-header" id="pageHeaderEl_p1_${sectionIdx}">Lithology Report</div>
             <div class="charts-section">
-                <div class="charts-container" id="wellGrid_${sectionIdx}">
-                    <p style="font-size:10px; color:#555; padding:6px;">Loading charts...</p>
-                </div>
+                <div class="charts-container" id="wellGrid_${sectionIdx}"><p style="font-size:10px; color:#555; padding:6px;">Loading charts...</p></div>
                 <div class="legend-box">${buildLegend()}</div>
             </div>
             <div class="main-map-section">
                 <div class="map-wrapper">
                     <div class="map-view-div" id="mapView_main_${sectionIdx}"></div>
-                    <img class="map-shot-img" id="mapShot_main_${sectionIdx}" alt="Main well location map">
+                    <img class="map-shot-img" id="mapShot_main_${sectionIdx}" alt="Main map">
                 </div>
                 <div class="map-caption" id="mapCaption_main_${sectionIdx}">Loading map data...</div>
             </div>
         `;
         reportContainer.appendChild(page1Div);
 
-        // --- PAGE 2 LANDSCAPE: Split 50/50 Map & Parcel Acreage Table ---
+        // --- PAGE 2: 4-Quadrant Layout ---
         const page2Div = document.createElement("div");
         page2Div.className = "pdf-page";
         page2Div.id = `page2_${sectionIdx}`;
         page2Div.innerHTML = `
-            <div class="report-header" id="pageHeaderEl_p2_${sectionIdx}">Lithology Report - Context Map & Acreage</div>
-            <div class="page2-split-section">
-                <div class="page2-left-map">
+            <div class="report-header" id="pageHeaderEl_p2_${sectionIdx}">Lithology Report - Wetlands, Truck Travel, Contours & Data Calculations</div>
+            <div class="page2-grid-section">
+                <!-- Quadrant 1: Wetlands Map -->
+                <div class="quadrant-box">
+                    <div class="quadrant-title">Wetlands Analysis Map</div>
                     <div class="map-wrapper">
-                        <div class="map-view-div" id="mapView_index_${sectionIdx}"></div>
-                        <img class="map-shot-img" id="mapShot_index_${sectionIdx}" alt="Regional index map">
+                        <div class="map-view-div" id="mapView_wetland_${sectionIdx}"></div>
+                        <img class="map-shot-img" id="mapShot_wetland_${sectionIdx}" alt="Wetlands map">
                     </div>
-                    <div class="map-caption" id="mapCaption_index_${sectionIdx}">Loading regional context...</div>
+                    <div class="map-caption" id="mapCaption_wetland_${sectionIdx}">Loading wetlands...</div>
                 </div>
-                <div class="page2-right-table" id="acreageContainer_${sectionIdx}">
-                    <p style="font-size:10px; color:#555;">Calculating parcel acreage for section wells...</p>
+
+                <!-- Quadrant 2: Truck Travel Map -->
+                <div class="quadrant-box">
+                    <div class="quadrant-title">Truck Travel Map (15, 30, 45 Min)</div>
+                    <div class="map-wrapper">
+                        <div class="map-view-div" id="mapView_truck_${sectionIdx}"></div>
+                        <img class="map-shot-img" id="mapShot_truck_${sectionIdx}" alt="Truck travel map">
+                    </div>
+                    <div class="map-caption" id="mapCaption_truck_${sectionIdx}">Loading travel zones...</div>
+                </div>
+
+                <!-- Quadrant 3: 2ft Contour Map -->
+                <div class="quadrant-box">
+                    <div class="quadrant-title">2ft Contour Map</div>
+                    <div class="map-wrapper">
+                        <div class="map-view-div" id="mapView_contour_${sectionIdx}"></div>
+                        <img class="map-shot-img" id="mapShot_contour_${sectionIdx}" alt="Contour map">
+                    </div>
+                    <div class="map-caption" id="mapCaption_contour_${sectionIdx}">Loading contours...</div>
+                </div>
+
+                <!-- Quadrant 4: Data Calculations Form & Acreage Summary -->
+                <div class="quadrant-box">
+                    <div class="quadrant-title">Data Calculations & Pricing Summary</div>
+                    <div id="calcFormContainer_${sectionIdx}">
+                        <p style="font-size:10px; color:#555;">Calculating values...</p>
+                    </div>
                 </div>
             </div>
         `;
@@ -1033,27 +939,15 @@ async function initReport(){
 
     updateReportTitles();
 
-    let lithologyMap = {};
-    let allFeatures = [];
-
+    let lithologyMap = {}, allFeatures = [];
     try {
-        const [lithMap, arcgisSdk] = await Promise.all([
-            fetchAllLithology(uniqueWellIds),
-            loadArcGIS()
-        ]);
+        const [lithMap, arcgisSdk] = await Promise.all([ fetchAllLithology(uniqueWellIds), loadArcGIS() ]);
         lithologyMap = lithMap;
 
         const cleanIds = uniqueWellIds.map(id => `'${String(id).replaceAll("'", "''")}'`);
-        const where = cleanIds.length === 1 
-            ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` 
-            : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
+        const where = cleanIds.length === 1 ? `${WELLS_ID_FIELD} = ${cleanIds[0]}` : `${WELLS_ID_FIELD} IN (${cleanIds.join(",")})`;
 
-        const result = await arcgisSdk.query.executeQueryJSON(WELLS_LAYER_URL, {
-            where,
-            outFields: [WELLS_ID_FIELD],
-            returnGeometry: true,
-            outSpatialReference: { wkid: 102100 }
-        });
+        const result = await arcgisSdk.query.executeQueryJSON(WELLS_LAYER_URL, { where, outFields: [WELLS_ID_FIELD], returnGeometry: true, outSpatialReference: { wkid: 102100 } });
         allFeatures = result.features || [];
     } catch (err) {
         console.error("Error fetching report data:", err);
@@ -1067,8 +961,7 @@ async function initReport(){
         const sectionTask = (async () => {
             try {
                 const grid = document.getElementById(`wellGrid_${sectionIdx}`);
-                const chartH = 290; // Fixed chart height for landscape letter fit
-
+                const chartH = 290;
                 grid.innerHTML = "";
                 sectionWellIds.forEach(wellId => {
                     const rowsData = lithologyMap[wellId] || [];
@@ -1082,18 +975,16 @@ async function initReport(){
                 console.error(`Error rendering section ${sectionIdx}:`, secErr);
             }
         })();
-
         sectionPromises.push(sectionTask);
     }
 
     await Promise.all(sectionPromises);
-
     btn.disabled = false;
     btn.textContent = "Download PDF";
 }
 
 // ======================================================
-// LANDSCAPE PDF EXPORT
+// PDF EXPORT
 // ======================================================
 function downloadPDF(){
     const rawTitle = getCustomTitle();
