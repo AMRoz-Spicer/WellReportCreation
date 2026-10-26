@@ -43,6 +43,14 @@ body {
     width: 280px;
 }
 
+#driveInput {
+    padding: 6px 10px;
+    font-size: 13px;
+    border: 1px solid #888;
+    border-radius: 3px;
+    width: 300px;
+}
+
 button {
     padding: 8px 18px;
     font-size: 14px;
@@ -386,6 +394,12 @@ button:disabled {
 <div id="controls">
     <label for="titleInput">Title:</label>
     <input type="text" id="titleInput" value="Lithology Report" oninput="updateReportTitles()">
+    <label for="driveInput">Drive-time layer (item ID or layer URL):</label>
+    <input type="text" id="driveInput" placeholder="Paste the saved drive-time layer item ID or URL">
+    <button id="driveBtn" onclick="applyDriveLayer()">Apply</button>
+    <label for="minutesInput">Or generate drive times (min):</label>
+    <input type="text" id="minutesInput" value="15,30,45" style="width:90px; padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
+    <button id="genDriveBtn" onclick="generateDriveAreas()">Generate</button>
     <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
 </div>
 
@@ -407,6 +421,32 @@ const MIN_MAP_SPAN_M = 600;
 
 // Hardcoded Wetland Layer URL
 const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/rest/services/EGLE_Part303StateWetlandInventory/FeatureServer/0";
+
+// ---------- Drive-time areas ----------
+// Two ways to get drive-time areas on the report map:
+//
+// 1) GENERATE during report creation (type minutes in the controls bar and click Generate, or
+//    add ?driveMins=15,30,45 to the link). The page calls the ArcGIS service area service from the
+//    mean center of each page's wells. Needs an API key with ROUTING privileges (ArcGIS Online >
+//    Content > New item > Developer credentials). Restrict the key to your GitHub Pages URL.
+//    Credits are charged to the account that owns the key.
+//
+// 2) LOAD a layer saved from the Experience Builder tool: ?drive=<item ID or layer URL>
+//    (optionally &driveWhere=<SQL filter>). That layer must be shared with Everyone.
+//
+// If both are set, the generated areas win.
+const API_KEY = "";
+const SERVICE_AREA_URL = "https://route-api.arcgis.com/arcgis/rest/services/World/ServiceAreas/NAServer/ServiceArea_World/solveServiceArea";
+const DEFAULT_BREAKS = [15, 30, 45];
+
+// Fill colors for each break, smallest to largest (cycles if there are more breaks)
+const DRIVE_COLORS = [
+    [0, 170, 0, 0.45],
+    [255, 200, 0, 0.45],
+    [230, 60, 0, 0.45],
+    [150, 0, 150, 0.45],
+    [0, 90, 200, 0.45]
+];
 
 const PARCEL_LAYER_URLS = [
     "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
@@ -431,8 +471,22 @@ const polygonRenderer = {
 const params = new URLSearchParams(window.location.search);
 const wellsParam = params.get("wells") || params.get("well") || "";
 const titleParam = params.get("title") || params.get("reportTitle") || "Lithology Report";
+const DRIVE_WHERE = (params.get("driveWhere") || "").trim();
+
+function parseBreaks(text){
+    const list = String(text || "").split(/[ ,;]+/).map(Number).filter(n => n > 0 && isFinite(n));
+    return [...new Set(list)].sort((a, b) => a - b);
+}
+
+// Current drive-time settings (changed by the Apply and Generate buttons)
+let driveLayerParam = (params.get("drive") || "").trim();
+let generateBreaks = params.get("driveMins") ? parseBreaks(params.get("driveMins")) : null;
+if (generateBreaks && generateBreaks.length === 0) generateBreaks = null;
+let reportRunning = false;
 
 document.getElementById("titleInput").value = titleParam;
+document.getElementById("driveInput").value = driveLayerParam;
+if (generateBreaks) document.getElementById("minutesInput").value = generateBreaks.join(",");
 document.title = "FinalV1 - " + titleParam;
 
 const allIds = wellsParam.split(",").map(id => id.trim()).filter(id => id.length > 0);
@@ -444,6 +498,30 @@ const lithologyQueryUrl = "https://gisagoegle.state.mi.us/arcgis/rest/services/E
 function getCustomTitle(){
     const input = document.getElementById("titleInput");
     return input && input.value.trim() ? input.value.trim() : "Lithology Report";
+}
+
+// Rebuilds the report using the saved drive-time layer typed into the controls bar
+function applyDriveLayer(){
+    if (reportRunning) return;
+    driveLayerParam = document.getElementById("driveInput").value.trim();
+    generateBreaks = null; // the pasted layer replaces any generated areas
+    initReport();
+}
+
+// Rebuilds the report and generates drive-time areas for the minutes typed into the controls bar
+function generateDriveAreas(){
+    if (reportRunning) return;
+    if (!API_KEY) {
+        alert("Set API_KEY near the top of Report.html (an API key with routing privileges) to generate drive-time areas here.");
+        return;
+    }
+    const breaks = parseBreaks(document.getElementById("minutesInput").value);
+    if (breaks.length === 0) {
+        alert("Enter one or more drive times in minutes, e.g. 15,30,45");
+        return;
+    }
+    generateBreaks = breaks;
+    initReport();
 }
 
 function updateReportTitles(){
@@ -458,7 +536,7 @@ function updateReportTitles(){
         if(header1) header1.textContent = `${title} - Charts & Well Map (Wells ${start}-${end} of ${uniqueWellIds.length}) [Section ${sectionIdx + 1} of ${totalSections}]`;
 
         const header2 = document.getElementById(`pageHeaderEl_p2_${sectionIdx}`);
-        if(header2) header2.textContent = `${title} - Wetlands, Truck Travel, Contours & Data Calculations [Section ${sectionIdx + 1} of ${totalSections}]`;
+        if(header2) header2.textContent = `${title} - Wetlands, Drive-Time Areas, Contours & Data Calculations [Section ${sectionIdx + 1} of ${totalSections}]`;
     });
 }
 
@@ -596,21 +674,24 @@ function buildCard(wellId, intervals, chartH, depthForScale){
 }
 
 // ======================================================
-// ARCGIS MAPS, AUTOMATED ACREAGE & GEOMETRY HELPERS
+// ARCGIS MAPS, AUTOMATED ACREAGE & DRIVE-TIME HELPERS
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
         if(typeof require !== "function"){ reject(new Error("ArcGIS SDK missing.")); return; }
         require([
             "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
-            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/core/reactiveUtils"
-        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils) => {
-            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils });
+            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query",
+            "esri/core/reactiveUtils", "esri/config", "esri/rest/serviceArea", "esri/rest/support/ServiceAreaParameters", "esri/rest/support/FeatureSet"
+        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query,
+            reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet) => {
+            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query,
+                      reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet });
         });
     });
 }
 
-// Automated Mean Center Helper (for Truck Travel origin hub)
+// Automated Mean Center Helper (marks the middle of the selected wells)
 function calculateMeanCenter(sectionFeatures, arcgisSdk) {
     if (!sectionFeatures || sectionFeatures.length === 0) return null;
     let sumX = 0, sumY = 0;
@@ -631,6 +712,96 @@ function calculateContourExtent(sectionFeatures, arcgisSdk) {
         geometry: bufferedAoi,
         symbol: { type: "simple-fill", color: [0, 255, 0, 0.05], outline: { color: [0, 180, 0, 1], width: 1.5, style: "dash" } }
     });
+}
+
+// Loads the drive-time layer the user saved from the app (item ID or layer URL).
+// Returns { layer, breaks, extent } or null if it can't be read.
+async function loadSavedDriveLayer(arcgisSdk){
+    const { FeatureLayer } = arcgisSdk;
+    const source = /^https?:/i.test(driveLayerParam)
+        ? { url: driveLayerParam }
+        : { portalItem: { id: driveLayerParam } };
+
+    const layer = new FeatureLayer({ ...source, opacity: 0.8, outFields: ["*"] });
+    if (DRIVE_WHERE) layer.definitionExpression = DRIVE_WHERE;
+    await layer.load();
+
+    let breaks = [];
+    const breakField = layer.fields.find(f => f.name.toLowerCase() === "tobreak");
+
+    if (breakField) {
+        const distinct = await layer.queryFeatures({
+            where: "1=1",
+            outFields: [breakField.name],
+            returnDistinctValues: true,
+            returnGeometry: false
+        });
+        breaks = [...new Set(distinct.features.map(f => Number(f.attributes[breakField.name])))]
+            .filter(v => !isNaN(v))
+            .sort((a, b) => a - b);
+
+        layer.renderer = {
+            type: "unique-value",
+            field: breakField.name,
+            uniqueValueInfos: breaks.map((value, i) => ({
+                value: value,
+                label: String(value),
+                symbol: {
+                    type: "simple-fill",
+                    color: DRIVE_COLORS[i % DRIVE_COLORS.length],
+                    outline: { color: [60, 60, 60, 1], width: 1 }
+                }
+            })),
+            defaultSymbol: { type: "simple-fill", color: [150, 150, 150, 0.4], outline: { color: [60, 60, 60, 1], width: 1 } }
+        };
+        // Draw the largest area first so the smaller ones stay visible on top
+        layer.orderBy = [{ field: breakField.name, order: "descending" }];
+    } else {
+        layer.renderer = {
+            type: "simple",
+            symbol: { type: "simple-fill", color: [255, 100, 0, 0.35], outline: { color: [200, 50, 0, 1], width: 1 } }
+        };
+    }
+
+    let extent = null;
+    try {
+        const ext = await layer.queryExtent();
+        if (ext && ext.count > 0 && ext.extent) extent = ext.extent;
+    } catch (e) { console.warn("Could not get drive-time layer extent:", e); }
+
+    return { layer, breaks, extent };
+}
+
+// Generates drive-time areas from the mean center with the ArcGIS service area service
+async function generateFallbackDriveAreas(meanCenterGraphic, arcgisSdk, targetLayer, breaks){
+    const { esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, Graphic } = arcgisSdk;
+    esriConfig.apiKey = API_KEY;
+
+    const saParams = new ServiceAreaParameters({
+        facilities: new FeatureSet({ features: [ new Graphic({ geometry: meanCenterGraphic.geometry }) ] }),
+        defaultBreaks: breaks,
+        trimOuterPolygon: true,
+        outSpatialReference: { wkid: 102100 }
+    });
+
+    const result = await serviceArea.solve(SERVICE_AREA_URL, saParams);
+    const polys = (result.serviceAreaPolygons && result.serviceAreaPolygons.features) || [];
+
+    polys
+        .sort((a, b) => b.attributes.ToBreak - a.attributes.ToBreak) // largest first, smallest on top
+        .forEach(feat => {
+            const idx = Math.max(breaks.indexOf(feat.attributes.ToBreak), 0);
+            targetLayer.add(new Graphic({
+                geometry: feat.geometry,
+                symbol: {
+                    type: "simple-fill",
+                    color: DRIVE_COLORS[idx % DRIVE_COLORS.length],
+                    outline: { color: [60, 60, 60, 1], width: 1 }
+                }
+            }));
+        });
+
+    return polys.length;
 }
 
 async function calculateParcelAcreage(sectionFeatures, arcgisSdk) {
@@ -743,37 +914,49 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 2. TRUCK TRAVEL MAP (Top-Right Quadrant - Ingesting Session Storage Polygons) ---
+        // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
+        // Wells and mean center always draw; the drive-time areas come from the saved layer
+        // (?drive=...) or, if no layer was supplied and API_KEY is set, from the service area fallback.
         const truckGraphicsLayer = new GraphicsLayer();
-        sectionFeatures.forEach(f => {
-            truckGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [255, 255, 0, 1], size: 7, outline: { color: [0, 0, 0, 1], width: 1 } } }));
-        });
-        
-        const meanCenterGraphic = calculateMeanCenter(sectionFeatures, arcgis);
-        if(meanCenterGraphic) truckGraphicsLayer.add(meanCenterGraphic);
+        const truckMapLayers = [];
+        let truckExtent = new Extent({ xmin: cx - (halfW * 12), xmax: cx + (halfW * 12), ymin: cy - (halfH * 12), ymax: cy + (halfH * 12), spatialReference: { wkid: 102100 } });
+        let truckCaptionText = "No drive-time areas yet. Enter minutes and click Generate, or paste a saved layer ID above.";
 
-        // Pull pre-computed travel polygons from Experience Builder session storage if available
-        const savedPolygons = sessionStorage.getItem("travelPolygons");
-        if (savedPolygons) {
+        const meanCenterGraphic = calculateMeanCenter(sectionFeatures, arcgis);
+
+        if (generateBreaks && API_KEY && meanCenterGraphic) {
             try {
-                const polygons = JSON.parse(savedPolygons);
-                polygons.forEach(poly => {
-                    truckGraphicsLayer.add(new Graphic({
-                        geometry: poly.geometry,
-                        symbol: { type: "simple-fill", color: [255, 100, 0, 0.2], outline: { color: [200, 50, 0, 1], width: 1 } }
-                    }));
-                });
-            } catch (e) {
-                console.warn("Could not parse saved travel polygons", e);
+                const count = await generateFallbackDriveAreas(meanCenterGraphic, arcgis, truckGraphicsLayer, generateBreaks);
+                truckCaptionText = count > 0
+                    ? `Drive-Time Areas from well center (${generateBreaks.join(", ")} min)`
+                    : "No drive-time areas returned for this location.";
+            } catch (saErr) {
+                console.warn("Service area request failed:", saErr);
+                truckCaptionText = "Drive-time generation failed (check the API key and routing privileges).";
+            }
+        } else if (driveLayerParam) {
+            try {
+                const drive = await loadSavedDriveLayer(arcgis);
+                truckMapLayers.push(drive.layer);
+                if (drive.extent) truckExtent = drive.extent.clone().expand(1.15);
+                truckCaptionText = drive.breaks.length
+                    ? `Drive-Time Areas (break values: ${drive.breaks.join(", ")})`
+                    : "Drive-Time Areas";
+            } catch (driveErr) {
+                console.warn("Could not load the drive-time layer. Check the item ID/URL and that it is shared with Everyone:", driveErr);
+                truckCaptionText = "Drive-time layer could not be loaded (check the ID/URL and sharing).";
             }
         }
 
-        const truckScaleFactor = 12;
-        const truckExtent = new Extent({ xmin: cx - (halfW * truckScaleFactor), xmax: cx + (halfW * truckScaleFactor), ymin: cy - (halfH * truckScaleFactor), ymax: cy + (halfH * truckScaleFactor), spatialReference: { wkid: 102100 } });
+        sectionFeatures.forEach(f => {
+            truckGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [255, 255, 0, 1], size: 7, outline: { color: [0, 0, 0, 1], width: 1 } } }));
+        });
+        if (meanCenterGraphic) truckGraphicsLayer.add(meanCenterGraphic);
+        truckMapLayers.push(truckGraphicsLayer);
 
         const truckMap = new Map({
             basemap: new Basemap({ baseLayers: [ new TileLayer({ url: TOPO_URL }) ] }),
-            layers: [ truckGraphicsLayer ]
+            layers: truckMapLayers
         });
 
         truckView = new MapView({ container: truckViewDivId, map: truckMap, constraints: { snapToZoom: false }, ui: { components: [] } });
@@ -847,12 +1030,13 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             reactiveUtils.whenOnce(() => mainView.stationary && truckView.stationary && wetlandView.stationary && contourView.stationary),
             reactiveUtils.whenOnce(() => !mainView.updating && !truckView.updating && !wetlandView.updating && !contourView.updating)
         ]);
-        await Promise.race([mapReadyPromise, new Promise(resolve => setTimeout(resolve, 8000))]);
+        // Wait up to 60 seconds for all layers to finish drawing before taking the screenshots
+        await Promise.race([mapReadyPromise, new Promise(resolve => setTimeout(resolve, 60000))]);
 
-        const mainShot = await mainView.takeScreenshot({ format: "jpg", quality: 90 });
-        const truckShot = await truckView.takeScreenshot({ format: "jpg", quality: 90 });
-        const wetlandShot = await wetlandView.takeScreenshot({ format: "jpg", quality: 90 });
-        const contourShot = await contourView.takeScreenshot({ format: "jpg", quality: 90 });
+        const mainShot = await mainView.takeScreenshot({ format: "jpg", quality: 100 });
+        const truckShot = await truckView.takeScreenshot({ format: "jpg", quality: 100 });
+        const wetlandShot = await wetlandView.takeScreenshot({ format: "jpg", quality: 100 });
+        const contourShot = await contourView.takeScreenshot({ format: "jpg", quality: 100 });
 
         // Inject Images
         const setImg = (id, shot, viewDivId, captionId, captionText) => {
@@ -864,7 +1048,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         };
 
         setImg(mainShotImgId, mainShot, mainViewDivId, mainCaptionId, `Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${Math.round(mainView.scale).toLocaleString()}`);
-        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, `Truck Travel Map (15, 30, 45 min zones)`);
+        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, truckCaptionText);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, `2ft Contour Map Template`);
 
@@ -927,6 +1111,12 @@ async function initReport(){
     const reportContainer = document.getElementById("report");
     const btn = document.getElementById("pdfBtn");
 
+    reportRunning = true;
+    btn.disabled = true;
+    btn.textContent = "Preparing report...";
+    document.getElementById("driveBtn").disabled = true;
+    document.getElementById("genDriveBtn").disabled = true;
+
     if(uniqueWellIds.length === 0){
         reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
         return;
@@ -960,7 +1150,7 @@ async function initReport(){
         page2Div.className = "pdf-page";
         page2Div.id = `page2_${sectionIdx}`;
         page2Div.innerHTML = `
-            <div class="report-header" id="pageHeaderEl_p2_${sectionIdx}">Lithology Report - Wetlands, Truck Travel, Contours & Data Calculations</div>
+            <div class="report-header" id="pageHeaderEl_p2_${sectionIdx}">Lithology Report - Wetlands, Drive-Time Areas, Contours & Data Calculations</div>
             <div class="page2-grid-section">
                 <!-- Quadrant 1: Wetlands Map -->
                 <div class="quadrant-box">
@@ -972,14 +1162,14 @@ async function initReport(){
                     <div class="map-caption" id="mapCaption_wetland_${sectionIdx}">Loading wetlands...</div>
                 </div>
 
-                <!-- Quadrant 2: Truck Travel Map -->
+                <!-- Quadrant 2: Drive-Time Areas Map -->
                 <div class="quadrant-box">
-                    <div class="quadrant-title">Truck Travel Map (15, 30, 45 Min)</div>
+                    <div class="quadrant-title">Drive-Time Areas</div>
                     <div class="map-wrapper">
                         <div class="map-view-div" id="mapView_truck_${sectionIdx}"></div>
-                        <img class="map-shot-img" id="mapShot_truck_${sectionIdx}" alt="Truck travel map">
+                        <img class="map-shot-img" id="mapShot_truck_${sectionIdx}" alt="Drive-time areas map">
                     </div>
-                    <div class="map-caption" id="mapCaption_truck_${sectionIdx}">Loading travel zones...</div>
+                    <div class="map-caption" id="mapCaption_truck_${sectionIdx}">Loading drive-time areas...</div>
                 </div>
 
                 <!-- Quadrant 3: 2ft Contour Map -->
@@ -1048,6 +1238,9 @@ async function initReport(){
     await Promise.all(sectionPromises);
     btn.disabled = false;
     btn.textContent = "Download PDF";
+    document.getElementById("driveBtn").disabled = false;
+    document.getElementById("genDriveBtn").disabled = false;
+    reportRunning = false;
 }
 
 // ======================================================
