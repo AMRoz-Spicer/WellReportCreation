@@ -606,9 +606,9 @@ function loadArcGIS(){
         if(typeof require !== "function"){ reject(new Error("ArcGIS SDK missing.")); return; }
         require([
             "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
-            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/rest/geoprocessing", "esri/core/reactiveUtils"
-        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessing, reactiveUtils) => {
-            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessing, reactiveUtils });
+            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/rest/geoprocessor", "esri/core/reactiveUtils"
+        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessor, reactiveUtils) => {
+            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessor, reactiveUtils });
         });
     });
 }
