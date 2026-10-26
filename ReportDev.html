@@ -406,7 +406,7 @@ const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_T
 const MIN_MAP_SPAN_M = 600;
 
 // Hardcoded Wetland Layer URL (Replace with your actual wetland FeatureServer / MapServer URL)
-const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/rest/services/EGLE_Part303StateWetlandInventory/FeatureServer/0";
+const WETLAND_LAYER_URL = "https://your-gis-server/arcgis/rest/services/Wetlands/MapServer/0";
 
 const PARCEL_LAYER_URLS = [
     "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
@@ -737,10 +737,53 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         truckView = new MapView({ container: truckViewDivId, map: truckMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 3. WETLAND MAP (Top-Left Quadrant - Hardcoded Layer URL) ---
+        // --- 3. WETLAND MAP (Top-Left Quadrant - Unique Value Symbology) ---
         const wetlandLayers = [];
         if (WETLAND_LAYER_URL && !WETLAND_LAYER_URL.includes("your-gis-server")) {
-            wetlandLayers.push(new FeatureLayer({ url: WETLAND_LAYER_URL }));
+            const wetlandRenderer = {
+                type: "unique-value",
+                field: "Symbology",
+                uniqueValueInfos: [
+                    {
+                        value: "5; 3; 7",
+                        symbol: {
+                            type: "simple-fill",
+                            color: [140, 150, 50, 0.4],
+                            style: "backward-diagonal",
+                            outline: { color: [0, 100, 0, 1], width: 1 }
+                        },
+                        label: "Wetlands as identified on NWI and MIRIS maps and soil areas which include wetland soils"
+                    },
+                    {
+                        value: "2; 4; 6",
+                        symbol: {
+                            type: "simple-fill",
+                            color: [112, 168, 48, 0.6],
+                            outline: { color: [50, 100, 20, 1], width: 1 }
+                        },
+                        label: "Wetlands as identified on NWI and MIRIS maps"
+                    },
+                    {
+                        value: "1",
+                        symbol: {
+                            type: "simple-fill",
+                            color: [168, 112, 48, 0.6],
+                            outline: { color: [100, 60, 20, 1], width: 1 }
+                        },
+                        label: "Soil areas which include wetland soils"
+                    }
+                ],
+                defaultSymbol: {
+                    type: "simple-fill",
+                    color: [200, 200, 200, 0.3],
+                    outline: { color: [100, 100, 100, 1], width: 0.5 }
+                }
+            };
+
+            wetlandLayers.push(new FeatureLayer({ 
+                url: WETLAND_LAYER_URL,
+                renderer: wetlandRenderer
+            }));
         }
         const wetlandGraphicsLayer = new GraphicsLayer();
         sectionFeatures.forEach(f => {
