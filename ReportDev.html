@@ -405,8 +405,11 @@ const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_T
 
 const MIN_MAP_SPAN_M = 600;
 
-// Hardcoded Wetland Layer URL (Replace with your actual wetland FeatureServer / MapServer URL)
+// Hardcoded Wetland Layer URL
 const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/rest/services/EGLE_Part303StateWetlandInventory/FeatureServer/0";
+
+// Drive Time Geoprocessing Tool URL (Esri World Service Areas GP task)
+const DRIVE_TIME_GP_URL = "https://logistics.arcgis.com/arcgis/rest/services/World/ServiceAreas/GPServer/GenerateServiceAreas";
 
 const PARCEL_LAYER_URLS = [
     "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
@@ -596,17 +599,40 @@ function buildCard(wellId, intervals, chartH, depthForScale){
 }
 
 // ======================================================
-// ARCGIS MAPS & ACREAGE ENGINE
+// ARCGIS MAPS, AUTOMATED ACREAGE & GEOPROCESSING HELPERS
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
         if(typeof require !== "function"){ reject(new Error("ArcGIS SDK missing.")); return; }
         require([
             "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
-            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/core/reactiveUtils"
-        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils) => {
-            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils });
+            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/rest/geoprocessing", "esri/core/reactiveUtils"
+        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessing, reactiveUtils) => {
+            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessing, reactiveUtils });
         });
+    });
+}
+
+// Automated Mean Center Helper (for Truck Travel origin hub)
+function calculateMeanCenter(sectionFeatures, arcgisSdk) {
+    if (!sectionFeatures || sectionFeatures.length === 0) return null;
+    let sumX = 0, sumY = 0;
+    sectionFeatures.forEach(f => { sumX += f.geometry.x; sumY += f.geometry.y; });
+    return new arcgisSdk.Graphic({
+        geometry: { type: "point", x: sumX / sectionFeatures.length, y: sumY / sectionFeatures.length, spatialReference: { wkid: 102100 } },
+        symbol: { type: "simple-marker", style: "cross", color: [255, 140, 0, 1], size: 12, outline: { color: [0, 0, 0, 1], width: 2 } }
+    });
+}
+
+// Automated Bounding Extent Helper (for Contour AOI template view)
+function calculateContourExtent(sectionFeatures, arcgisSdk) {
+    if (!sectionFeatures || sectionFeatures.length === 0) return null;
+    const geometries = sectionFeatures.map(f => f.geometry);
+    const unionedGeom = arcgisSdk.geometryEngine.union(geometries);
+    const bufferedAoi = arcgisSdk.geometryEngine.buffer(unionedGeom, 500, "meters");
+    return new arcgisSdk.Graphic({
+        geometry: bufferedAoi,
+        symbol: { type: "simple-fill", color: [0, 255, 0, 0.05], outline: { color: [0, 180, 0, 1], width: 1.5, style: "dash" } }
     });
 }
 
@@ -679,7 +705,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
     try {
         const arcgis = await loadArcGIS();
-        const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
+        const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geoprocessing, reactiveUtils } = arcgis;
 
         // --- 1. MAIN WELL MAP (Page 1) ---
         const mainGraphicsLayer = new GraphicsLayer();
@@ -720,12 +746,43 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 2. TRUCK TRAVEL MAP (Top-Right Quadrant) ---
+        // --- 2. TRUCK TRAVEL MAP (Top-Right Quadrant - Automated Service Area GP Execution) ---
         const truckGraphicsLayer = new GraphicsLayer();
         sectionFeatures.forEach(f => {
             truckGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [255, 255, 0, 1], size: 7, outline: { color: [0, 0, 0, 1], width: 1 } } }));
         });
-        truckGraphicsLayer.add(new Graphic({ geometry: mainExtent, symbol: { type: "simple-fill", color: [255, 0, 0, 0.15], outline: { color: [255, 0, 0, 1], width: 2 } } }));
+
+        const meanCenterGraphic = calculateMeanCenter(sectionFeatures, arcgis);
+        if(meanCenterGraphic) {
+            truckGraphicsLayer.add(meanCenterGraphic);
+
+            if (DRIVE_TIME_GP_URL && !DRIVE_TIME_GP_URL.includes("your-gis-server")) {
+                try {
+                    const gpParams = { 
+                        Input_Point: meanCenterGraphic.geometry, 
+                        Travel_Mode: "Driving Time",
+                        Break_Values: "15 30 45",
+                        Break_Units: "Minutes",
+                        Travel_Direction: "Away from input locations"
+                    };
+                    const gpResult = await geoprocessing.execute(DRIVE_TIME_GP_URL, gpParams);
+                    if (gpResult && gpResult.results) {
+                        gpResult.results.forEach(res => {
+                            if (res.value && res.value.features) {
+                                res.value.features.forEach(feat => {
+                                    truckGraphicsLayer.add(new Graphic({
+                                        geometry: feat.geometry,
+                                        symbol: { type: "simple-fill", color: [255, 100, 0, 0.2], outline: { color: [200, 50, 0, 1], width: 1 } }
+                                    }));
+                                });
+                            }
+                        });
+                    }
+                } catch (gpErr) {
+                    console.warn("Automated Service Area GP execution skipped/failed:", gpErr);
+                }
+            }
+        }
 
         const truckScaleFactor = 12;
         const truckExtent = new Extent({ xmin: cx - (halfW * truckScaleFactor), xmax: cx + (halfW * truckScaleFactor), ymin: cy - (halfH * truckScaleFactor), ymax: cy + (halfH * truckScaleFactor), spatialReference: { wkid: 102100 } });
@@ -746,44 +803,24 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 uniqueValueInfos: [
                     {
                         value: "5; 3; 7",
-                        symbol: {
-                            type: "simple-fill",
-                            color: [140, 150, 50, 0.4],
-                            style: "backward-diagonal",
-                            outline: { color: [0, 100, 0, 1], width: 1 }
-                        },
+                        symbol: { type: "simple-fill", color: [140, 150, 50, 0.4], style: "backward-diagonal", outline: { color: [0, 100, 0, 1], width: 1 } },
                         label: "Wetlands as identified on NWI and MIRIS maps and soil areas which include wetland soils"
                     },
                     {
                         value: "2; 4; 6",
-                        symbol: {
-                            type: "simple-fill",
-                            color: [112, 168, 48, 0.6],
-                            outline: { color: [50, 100, 20, 1], width: 1 }
-                        },
+                        symbol: { type: "simple-fill", color: [112, 168, 48, 0.6], outline: { color: [50, 100, 20, 1], width: 1 } },
                         label: "Wetlands as identified on NWI and MIRIS maps"
                     },
                     {
                         value: "1",
-                        symbol: {
-                            type: "simple-fill",
-                            color: [168, 112, 48, 0.6],
-                            outline: { color: [100, 60, 20, 1], width: 1 }
-                        },
+                        symbol: { type: "simple-fill", color: [168, 112, 48, 0.6], outline: { color: [100, 60, 20, 1], width: 1 } },
                         label: "Soil areas which include wetland soils"
                     }
                 ],
-                defaultSymbol: {
-                    type: "simple-fill",
-                    color: [200, 200, 200, 0.3],
-                    outline: { color: [100, 100, 100, 1], width: 0.5 }
-                }
+                defaultSymbol: { type: "simple-fill", color: [200, 200, 200, 0.3], outline: { color: [100, 100, 100, 1], width: 0.5 } }
             };
 
-            wetlandLayers.push(new FeatureLayer({ 
-                url: WETLAND_LAYER_URL,
-                renderer: wetlandRenderer
-            }));
+            wetlandLayers.push(new FeatureLayer({ url: WETLAND_LAYER_URL, renderer: wetlandRenderer }));
         }
         const wetlandGraphicsLayer = new GraphicsLayer();
         sectionFeatures.forEach(f => {
@@ -798,8 +835,11 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         wetlandView = new MapView({ container: wetlandViewDivId, map: wetlandMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 4. CONTOUR MAP (Bottom-Left Quadrant - Blank Template) ---
+        // --- 4. CONTOUR MAP (Bottom-Left Quadrant - Reverted Template with Automated Extent Boundary) ---
         const contourGraphicsLayer = new GraphicsLayer();
+        const contourExtentGraphic = calculateContourExtent(sectionFeatures, arcgis);
+        if(contourExtentGraphic) contourGraphicsLayer.add(contourExtentGraphic);
+
         sectionFeatures.forEach(f => {
             contourGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [50, 180, 50, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
         });
@@ -840,11 +880,11 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         };
 
         setImg(mainShotImgId, mainShot, mainViewDivId, mainCaptionId, `Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${Math.round(mainView.scale).toLocaleString()}`);
-        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, `Truck Travel Map (15, 30, 45 min zones)`);
+        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, `Truck Travel Map (15, 30, 45 min zones) | Auto-Computed`);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
-        setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, `2ft Contour Map`);
+        setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, `2ft Contour Map Template`);
 
-        // --- CALCULATIONS FORM CONTAINER (Bottom-Right Quadrant) ---
+        // --- CALCULATIONS FORM CONTAINER (Bottom-Right Quadrant - Automated Acreage) ---
         const parcelData = await calculateParcelAcreage(sectionFeatures, arcgis);
         const calcContainer = document.getElementById(calcFormContainerId);
         
@@ -862,8 +902,8 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                     <tbody>${rowsHtml || '<tr><td colspan="2">No enclosing parcels detected.</td></tr>'}</tbody>
                 </table>
                 <div class="calc-row">
-                    <label>Acreage:</label>
-                    <input type="text" id="inputAcreage_${sectionIdx}" value="${totalCalculatedAcres.toFixed(2)}" oninput="updateCalculations(${sectionIdx})">
+                    <label>Acreage (Auto):</label>
+                    <input type="text" id="inputAcreage_${sectionIdx}" value="${totalCalculatedAcres.toFixed(2)}" readonly style="background:#eee; font-weight:bold;">
                 </div>
                 <div class="calc-row">
                     <label>Total Price ($):</label>
@@ -871,7 +911,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 </div>
                 <div class="calc-row">
                     <label>Price Per Acre ($):</label>
-                    <input type="text" id="inputPricePerAcre_${sectionIdx}" value="0.00" readonly style="background:#eee;">
+                    <input type="text" id="inputPricePerAcre_${sectionIdx}" value="0.00" readonly style="background:#eee; font-weight:bold;">
                 </div>
             </div>
         `;
@@ -882,7 +922,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     }
 }
 
-// Live calculation script for Price Per Acre
+// Live calculation script for Price Per Acre using auto-calculated acreage
 function updateCalculations(idx) {
     const acres = parseFloat(document.getElementById(`inputAcreage_${idx}`).value) || 0;
     const price = parseFloat(document.getElementById(`inputPrice_${idx}`).value.replace(/[^0-9.-]+/g,"")) || 0;
