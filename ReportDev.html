@@ -408,9 +408,6 @@ const MIN_MAP_SPAN_M = 600;
 // Hardcoded Wetland Layer URL
 const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/rest/services/EGLE_Part303StateWetlandInventory/FeatureServer/0";
 
-// Drive Time Geoprocessing Tool URL (Esri World Service Areas GP task)
-const DRIVE_TIME_GP_URL = "https://logistics.arcgis.com/arcgis/rest/services/World/ServiceAreas/GPServer/GenerateServiceAreas";
-
 const PARCEL_LAYER_URLS = [
     "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
     "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87",
@@ -599,16 +596,16 @@ function buildCard(wellId, intervals, chartH, depthForScale){
 }
 
 // ======================================================
-// ARCGIS MAPS, AUTOMATED ACREAGE & GEOPROCESSING HELPERS
+// ARCGIS MAPS, AUTOMATED ACREAGE & GEOMETRY HELPERS
 // ======================================================
 function loadArcGIS(){
     return new Promise((resolve, reject) => {
         if(typeof require !== "function"){ reject(new Error("ArcGIS SDK missing.")); return; }
         require([
             "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
-            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/rest/geoprocessor", "esri/core/reactiveUtils"
-        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessor, reactiveUtils) => {
-            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, geoprocessor, reactiveUtils });
+            "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query", "esri/core/reactiveUtils"
+        ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils) => {
+            resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query, reactiveUtils });
         });
     });
 }
@@ -624,7 +621,7 @@ function calculateMeanCenter(sectionFeatures, arcgisSdk) {
     });
 }
 
-// Automated Bounding Extent Helper (for Contour AOI template view)
+// Automated Bounding Extent Helper (for Contour Area of Interest)
 function calculateContourExtent(sectionFeatures, arcgisSdk) {
     if (!sectionFeatures || sectionFeatures.length === 0) return null;
     const geometries = sectionFeatures.map(f => f.geometry);
@@ -705,7 +702,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
     try {
         const arcgis = await loadArcGIS();
-        const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geoprocessing, reactiveUtils } = arcgis;
+        const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
 
         // --- 1. MAIN WELL MAP (Page 1) ---
         const mainGraphicsLayer = new GraphicsLayer();
@@ -746,43 +743,16 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 2. TRUCK TRAVEL MAP (Top-Right Quadrant - Automated Service Area GP Execution) ---
+        // --- 2. TRUCK TRAVEL MAP (Top-Right Quadrant - Automated Mean Center Origin) ---
         const truckGraphicsLayer = new GraphicsLayer();
         sectionFeatures.forEach(f => {
             truckGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [255, 255, 0, 1], size: 7, outline: { color: [0, 0, 0, 1], width: 1 } } }));
         });
-
+        
         const meanCenterGraphic = calculateMeanCenter(sectionFeatures, arcgis);
-        if(meanCenterGraphic) {
-            truckGraphicsLayer.add(meanCenterGraphic);
+        if(meanCenterGraphic) truckGraphicsLayer.add(meanCenterGraphic);
 
-            if (DRIVE_TIME_GP_URL && !DRIVE_TIME_GP_URL.includes("your-gis-server")) {
-                try {
-                    const gpParams = { 
-                        Input_Point: meanCenterGraphic.geometry, 
-                        Travel_Mode: "Driving Time",
-                        Break_Values: "15 30 45",
-                        Break_Units: "Minutes",
-                        Travel_Direction: "Away from input locations"
-                    };
-                    const gpResult = await geoprocessing.execute(DRIVE_TIME_GP_URL, gpParams);
-                    if (gpResult && gpResult.results) {
-                        gpResult.results.forEach(res => {
-                            if (res.value && res.value.features) {
-                                res.value.features.forEach(feat => {
-                                    truckGraphicsLayer.add(new Graphic({
-                                        geometry: feat.geometry,
-                                        symbol: { type: "simple-fill", color: [255, 100, 0, 0.2], outline: { color: [200, 50, 0, 1], width: 1 } }
-                                    }));
-                                });
-                            }
-                        });
-                    }
-                } catch (gpErr) {
-                    console.warn("Automated Service Area GP execution skipped/failed:", gpErr);
-                }
-            }
-        }
+        truckGraphicsLayer.add(new Graphic({ geometry: mainExtent, symbol: { type: "simple-fill", color: [255, 0, 0, 0.15], outline: { color: [255, 0, 0, 1], width: 2 } } }));
 
         const truckScaleFactor = 12;
         const truckExtent = new Extent({ xmin: cx - (halfW * truckScaleFactor), xmax: cx + (halfW * truckScaleFactor), ymin: cy - (halfH * truckScaleFactor), ymax: cy + (halfH * truckScaleFactor), spatialReference: { wkid: 102100 } });
@@ -835,7 +805,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         wetlandView = new MapView({ container: wetlandViewDivId, map: wetlandMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 4. CONTOUR MAP (Bottom-Left Quadrant - Reverted Template with Automated Extent Boundary) ---
+        // --- 4. CONTOUR MAP (Bottom-Left Quadrant - Automated Extent Polygon) ---
         const contourGraphicsLayer = new GraphicsLayer();
         const contourExtentGraphic = calculateContourExtent(sectionFeatures, arcgis);
         if(contourExtentGraphic) contourGraphicsLayer.add(contourExtentGraphic);
@@ -880,7 +850,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         };
 
         setImg(mainShotImgId, mainShot, mainViewDivId, mainCaptionId, `Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${Math.round(mainView.scale).toLocaleString()}`);
-        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, `Truck Travel Map (15, 30, 45 min zones) | Auto-Computed`);
+        setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, `Truck Travel Map (15, 30, 45 min zones) | Mean Center Origin`);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, `2ft Contour Map Template`);
 
