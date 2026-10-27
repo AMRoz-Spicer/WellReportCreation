@@ -399,7 +399,13 @@ button:disabled {
     <button id="driveBtn" onclick="applyDriveLayer()">Apply</button>
     <label for="minutesInput">Or generate drive times (min):</label>
     <input type="text" id="minutesInput" value="15,30,45" style="width:90px; padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
-    <button id="genDriveBtn" onclick="generateDriveAreas()">Sign in &amp; Generate</button>
+    <button id="genDriveBtn" onclick="generateDriveAreas()">Generate drive times</button>
+    <label for="contourInput">Contours (ft):</label>
+    <select id="contourInput" style="padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+    </select>
+    <button id="contourBtn" onclick="generateContours()">Generate contours</button>
     <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
 </div>
 
@@ -442,6 +448,20 @@ const DEFAULT_BREAKS = [15, 30, 45];
 // Travel mode, matching the Generate Travel Areas settings used in the Experience:
 // Trucking Time, away from the input point, overlapping polygons, simplified (not detailed) polygons.
 const TRAVEL_MODE_NAME = "Trucking Time";
+
+// ---------- Contours ----------
+// Notebook-based web tool "Contour Shapefile Creation". It downloads USGS 3DEP elevation for the area of
+// interest, builds contours, publishes them as a NEW hosted feature layer in the signed-in account, and
+// returns that layer's URL. The tool is run ONCE per report with one square area that covers every page.
+// Also add ?contourFt=2 to the report link to generate on load (you will be asked to sign in).
+const CONTOUR_GP_SERVICE_URL = "https://notebookswebtools8.arcgis.com/arcgis/rest/services/0a8fc171b4a1445f8d39c751414ce0a5/GPServer";
+const CONTOUR_TASK_NAME = "";                 // leave "" to use the first (only) tool on the service
+const CONTOUR_INTERVAL_PARAM = "contour_interval";
+const CONTOUR_AOI_PARAM = "input_aoi";
+const CONTOUR_OUTPUT_PARAM = "output_layer_url";
+const CONTOUR_PAD_FRACTION = 0.10;            // extra margin around the combined page map extents
+const MAX_CONTOUR_SIDE_FT = 6000;             // ask before running on a larger area (slow, many USGS tiles)
+const CONTOUR_TIMEOUT_MS = 15 * 60 * 1000;    // give up waiting after 15 minutes
 
 // Fill colors for each break, smallest to largest (cycles if there are more breaks)
 const DRIVE_COLORS = [
@@ -488,10 +508,13 @@ let generateBreaks = params.get("driveMins") ? parseBreaks(params.get("driveMins
 if (generateBreaks && generateBreaks.length === 0) generateBreaks = null;
 let reportRunning = false;
 let driveCache = null; // drive-time areas generated ONCE per report, shared by every page
+let contourCache = null; // contour layer generated ONCE per report, shared by every page
+let generateContourInterval = Number(params.get("contourFt")) > 0 ? Number(params.get("contourFt")) : null;
 
 document.getElementById("titleInput").value = titleParam;
 document.getElementById("driveInput").value = driveLayerParam;
 if (generateBreaks) document.getElementById("minutesInput").value = generateBreaks.join(",");
+if (generateContourInterval) document.getElementById("contourInput").value = String(generateContourInterval);
 document.title = "FinalV1 - " + titleParam;
 
 const allIds = wellsParam.split(",").map(id => id.trim()).filter(id => id.length > 0);
@@ -535,6 +558,115 @@ async function generateDriveAreas(){
     }
     generateBreaks = breaks;
     initReport();
+}
+
+async function generateContours(){
+    if (reportRunning) return;
+    try {
+        await ensureSignedIn();
+    } catch (e) {
+        alert("Sign-in was cancelled or failed. Sign in with your ArcGIS Online username and password to generate contours.");
+        return;
+    }
+    generateContourInterval = Number(document.getElementById("contourInput").value);
+    initReport();
+}
+
+// ======================================================
+// CONTOURS (notebook web tool, run ONCE per report)
+// ======================================================
+function setContourStatus(text){
+    document.querySelectorAll('[id^="mapCaption_contour_"]').forEach(el => { el.textContent = text; });
+}
+
+// The tool returns the hosted layer's service URL (.../FeatureServer); the map needs the layer (.../FeatureServer/0)
+function normalizeLayerUrl(u){
+    let s = String(u || "").trim();
+    if (/\/FeatureServer\/?$/i.test(s)) s = s.replace(/\/$/, "") + "/0";
+    return s;
+}
+
+// ONE square area of interest that covers every page's contour map: the union of all page map extents
+// (same sizing rules as the page maps), made square, plus a margin.
+function computeContourAoi(allFeatures){
+    let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+    for (let s = 0; s < totalSections; s++){
+        const ids = uniqueWellIds.slice(s * WELLS_PER_PAGE, (s + 1) * WELLS_PER_PAGE);
+        const feats = allFeatures.filter(f => ids.includes(String(f.attributes[WELLS_ID_FIELD])));
+        if (!feats.length) continue;
+        const xs = feats.map(f => f.geometry.x), ys = feats.map(f => f.geometry.y);
+        const sxmin = Math.min(...xs), sxmax = Math.max(...xs);
+        const symin = Math.min(...ys), symax = Math.max(...ys);
+        const cx = (sxmin + sxmax) / 2, cy = (symin + symax) / 2;
+        const halfW = Math.max((sxmax - sxmin) / 2 * 1.5, MIN_MAP_SPAN_M / 2);
+        const halfH = Math.max((symax - symin) / 2 * 1.5, MIN_MAP_SPAN_M / 2);
+        xmin = Math.min(xmin, cx - halfW); xmax = Math.max(xmax, cx + halfW);
+        ymin = Math.min(ymin, cy - halfH); ymax = Math.max(ymax, cy + halfH);
+    }
+    const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+    const half = Math.max(xmax - xmin, ymax - ymin) / 2 * (1 + CONTOUR_PAD_FRACTION);
+    // Web Mercator stretches distances, so convert the side length to real feet at this latitude
+    const lat = 2 * Math.atan(Math.exp(cy / 6378137)) - Math.PI / 2;
+    const sideFt = (2 * half) * Math.cos(lat) * 3.28084;
+    return { x0: cx - half, y0: cy - half, x1: cx + half, y1: cy + half, sideFt: sideFt };
+}
+
+// Runs the notebook web tool once and returns the URL of the hosted contour layer it publishes
+async function runContourTool(aoi, interval, arcgisSdk){
+    const { esriRequest, geoprocessor, FeatureSet, Graphic } = arcgisSdk;
+
+    // Find the tool on the service and check its parameter names
+    const svc = await esriRequest(CONTOUR_GP_SERVICE_URL, { query: { f: "json" }, responseType: "json" });
+    const tasks = (svc.data && svc.data.tasks) || [];
+    const taskName = CONTOUR_TASK_NAME || tasks[0];
+    if (!taskName) throw new Error("No tool was found on the contour service.");
+    const taskUrl = CONTOUR_GP_SERVICE_URL + "/" + encodeURIComponent(taskName);
+
+    const task = await esriRequest(taskUrl, { query: { f: "json" }, responseType: "json" });
+    const names = ((task.data && task.data.parameters) || []).map(p => p.name);
+    [CONTOUR_INTERVAL_PARAM, CONTOUR_AOI_PARAM, CONTOUR_OUTPUT_PARAM].forEach(n => {
+        if (!names.includes(n)) throw new Error(`Contour tool parameter "${n}" not found. Available: ${names.join(", ")}`);
+    });
+
+    // The area of interest goes in as a one-polygon feature set (Web Mercator)
+    const aoiSet = new FeatureSet({
+        geometryType: "polygon",
+        spatialReference: { wkid: 102100 },
+        fields: [{ name: "OBJECTID", alias: "OBJECTID", type: "oid" }],
+        features: [ new Graphic({
+            attributes: { OBJECTID: 1 },
+            geometry: {
+                type: "polygon",
+                spatialReference: { wkid: 102100 },
+                rings: [[[aoi.x0, aoi.y0], [aoi.x0, aoi.y1], [aoi.x1, aoi.y1], [aoi.x1, aoi.y0], [aoi.x0, aoi.y0]]]
+            }
+        }) ]
+    });
+
+    const toolParams = {};
+    toolParams[CONTOUR_INTERVAL_PARAM] = interval;
+    toolParams[CONTOUR_AOI_PARAM] = aoiSet;
+
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CONTOUR_TIMEOUT_MS);
+    try {
+        setContourStatus("Running the contour tool (this can take several minutes)...");
+        const job = await geoprocessor.submitJob(taskUrl, toolParams);
+        await job.waitForJobCompletion({
+            interval: 3000,
+            signal: controller.signal,
+            statusCallback: info => setContourStatus(`Contour tool: ${info.jobStatus} (${Math.round((Date.now() - started) / 1000)} s)`)
+        });
+        if (job.jobStatus !== "job-succeeded") {
+            const msgs = (job.messages || []).map(m => m.description).filter(Boolean).slice(-3).join(" | ");
+            throw new Error(`Contour tool ${job.jobStatus}. ${msgs}`);
+        }
+        const result = await job.fetchResultData(CONTOUR_OUTPUT_PARAM);
+        return result.value;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 function updateReportTitles(){
@@ -695,11 +827,11 @@ function loadArcGIS(){
         require([
             "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
             "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query",
-            "esri/core/reactiveUtils", "esri/config", "esri/rest/serviceArea", "esri/rest/support/ServiceAreaParameters", "esri/rest/support/FeatureSet", "esri/rest/networkService", "esri/identity/IdentityManager"
+            "esri/core/reactiveUtils", "esri/config", "esri/rest/serviceArea", "esri/rest/support/ServiceAreaParameters", "esri/rest/support/FeatureSet", "esri/rest/networkService", "esri/identity/IdentityManager", "esri/rest/geoprocessor", "esri/request"
         ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query,
-            reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService, esriId) => {
+            reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService, esriId, geoprocessor, esriRequest) => {
             resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query,
-                      reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService, esriId });
+                      reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService, esriId, geoprocessor, esriRequest });
         });
     });
 }
@@ -1031,10 +1163,32 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         wetlandView = new MapView({ container: wetlandViewDivId, map: wetlandMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 4. CONTOUR MAP (Bottom-Left Quadrant - Automated Extent Polygon) ---
+        // --- 4. CONTOUR MAP (Bottom-Left Quadrant) ---
+        // The contour layer was created ONCE in initReport; every page just draws it and zooms to its own wells.
         const contourGraphicsLayer = new GraphicsLayer();
-        const contourExtentGraphic = calculateContourExtent(sectionFeatures, arcgis);
-        if(contourExtentGraphic) contourGraphicsLayer.add(contourExtentGraphic);
+        const contourMapLayers = [];
+        let contourCaptionText = "No contours yet. Choose an interval and click Generate contours.";
+
+        if (contourCache && contourCache.url) {
+            contourMapLayers.push(new FeatureLayer({
+                url: contourCache.url,
+                outFields: ["Contour"],
+                renderer: { type: "simple", symbol: { type: "simple-line", color: [150, 90, 30, 1], width: 0.75 } },
+                labelsVisible: true,
+                labelingInfo: [{
+                    labelExpressionInfo: { expression: "Text($feature.Contour, '#') + \"'\"" },
+                    labelPlacement: "center-along",
+                    symbol: { type: "text", color: [90, 50, 20, 1], haloColor: [255, 255, 255, 1], haloSize: 1.5, font: { size: 8 } }
+                }]
+            }));
+            contourCaptionText = `${contourCache.interval} ft contours (USGS 3DEP elevation), generated once for all selected wells`;
+        } else {
+            if (contourCache && contourCache.error) {
+                contourCaptionText = "Contour generation failed: " + (contourCache.error.message || "see the browser console");
+            }
+            const contourExtentGraphic = calculateContourExtent(sectionFeatures, arcgis);
+            if(contourExtentGraphic) contourGraphicsLayer.add(contourExtentGraphic);
+        }
 
         sectionFeatures.forEach(f => {
             contourGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [50, 180, 50, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
@@ -1042,7 +1196,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         const contourMap = new Map({
             basemap: new Basemap({ baseLayers: [ new TileLayer({ url: TOPO_URL }) ] }),
-            layers: [ contourGraphicsLayer ]
+            layers: [ ...contourMapLayers, contourGraphicsLayer ]
         });
 
         contourView = new MapView({ container: contourViewDivId, map: contourMap, constraints: { snapToZoom: false }, ui: { components: [] } });
@@ -1079,7 +1233,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         setImg(mainShotImgId, mainShot, mainViewDivId, mainCaptionId, `Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${Math.round(mainView.scale).toLocaleString()}`);
         setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, truckCaptionText);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
-        setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, `2ft Contour Map Template`);
+        setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
 
         // --- CALCULATIONS FORM CONTAINER (Bottom-Right Quadrant - Automated Acreage) ---
         const parcelData = await calculateParcelAcreage(sectionFeatures, arcgis);
@@ -1145,6 +1299,7 @@ async function initReport(){
     btn.textContent = "Preparing report...";
     document.getElementById("driveBtn").disabled = true;
     document.getElementById("genDriveBtn").disabled = true;
+    document.getElementById("contourBtn").disabled = true;
 
     if(uniqueWellIds.length === 0){
         reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
@@ -1203,7 +1358,7 @@ async function initReport(){
 
                 <!-- Quadrant 3: 2ft Contour Map -->
                 <div class="quadrant-box">
-                    <div class="quadrant-title">2ft Contour Map</div>
+                    <div class="quadrant-title">Contour Map</div>
                     <div class="map-wrapper">
                         <div class="map-view-div" id="mapView_contour_${sectionIdx}"></div>
                         <img class="map-shot-img" id="mapShot_contour_${sectionIdx}" alt="Contour map">
@@ -1240,17 +1395,39 @@ async function initReport(){
     }
 
     // Run the drive-time tool ONCE for the whole report, from the center of all selected wells
-    driveCache = null;
-    if (generateBreaks && allFeatures.length > 0) {
+    const driveKey = (generateBreaks || []).join(",") + "|" + uniqueWellIds.join(",");
+    // Reuse the last result when the wells and breaks are unchanged (no repeat charge); retry after an error
+    if (driveCache && (driveCache.error || !generateBreaks || driveCache.key !== driveKey)) driveCache = null;
+    if (generateBreaks && allFeatures.length > 0 && !driveCache) {
         try {
             const sdk = await loadArcGIS();
             const masterLayer = new sdk.GraphicsLayer();
             const center = calculateMeanCenter(allFeatures, sdk);
             const count = await generateFallbackDriveAreas(center, sdk, masterLayer, generateBreaks);
-            driveCache = { layer: masterLayer, count: count, error: null };
+            driveCache = { key: driveKey, layer: masterLayer, count: count, error: null };
         } catch (e) {
             console.warn("Service area request failed:", e);
             driveCache = { layer: null, count: 0, error: e };
+        }
+    }
+
+    // Run the contour tool ONCE for the whole report, over one square area covering every page's contour map
+    const contourKey = (generateContourInterval || "") + "|" + uniqueWellIds.join(",");
+    if (contourCache && (contourCache.error || !generateContourInterval || contourCache.key !== contourKey)) contourCache = null;
+    if (generateContourInterval && allFeatures.length > 0 && !contourCache) {
+        try {
+            const sdk = await loadArcGIS();
+            const aoi = computeContourAoi(allFeatures);
+            if (aoi.sideFt > MAX_CONTOUR_SIDE_FT) {
+                const ok = confirm(`The contour area is about ${Math.round(aoi.sideFt).toLocaleString()} ft (${(aoi.sideFt / 5280).toFixed(1)} mi) on each side. ` +
+                    `Large areas run slowly and may fail. Run the contour tool anyway?`);
+                if (!ok) throw new Error("Contour run cancelled because the area is large.");
+            }
+            const rawUrl = await runContourTool(aoi, generateContourInterval, sdk);
+            contourCache = { key: contourKey, url: normalizeLayerUrl(rawUrl), interval: generateContourInterval, error: null };
+        } catch (e) {
+            console.warn("Contour tool failed:", e);
+            contourCache = { key: contourKey, url: null, interval: generateContourInterval, error: e };
         }
     }
 
@@ -1284,6 +1461,7 @@ async function initReport(){
     btn.textContent = "Download PDF";
     document.getElementById("driveBtn").disabled = false;
     document.getElementById("genDriveBtn").disabled = false;
+    document.getElementById("contourBtn").disabled = false;
     reportRunning = false;
 }
 
