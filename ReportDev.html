@@ -1152,7 +1152,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         }
         const wetlandGraphicsLayer = new GraphicsLayer();
         sectionFeatures.forEach(f => {
-            wetlandGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [0, 150, 255, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
+            wetlandGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [230, 30, 30, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
         });
         wetlandLayers.push(wetlandGraphicsLayer);
 
@@ -1191,7 +1191,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         }
 
         sectionFeatures.forEach(f => {
-            contourGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [50, 180, 50, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
+            contourGraphicsLayer.add(new Graphic({ geometry: f.geometry, symbol: { type: "simple-marker", style: "circle", color: [230, 30, 30, 1], size: 8, outline: { color: [255, 255, 255, 1], width: 1.5 } } }));
         });
 
         const contourMap = new Map({
