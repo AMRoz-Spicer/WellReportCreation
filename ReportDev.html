@@ -399,9 +399,7 @@ button:disabled {
     <button id="driveBtn" onclick="applyDriveLayer()">Apply</button>
     <label for="minutesInput">Or generate drive times (min):</label>
     <input type="text" id="minutesInput" value="15,30,45" style="width:90px; padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
-    <label for="keyInput">API key:</label>
-    <input type="password" id="keyInput" placeholder="Paste once" autocomplete="off" style="width:150px; padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
-    <button id="genDriveBtn" onclick="generateDriveAreas()">Generate</button>
+    <button id="genDriveBtn" onclick="generateDriveAreas()">Sign in &amp; Generate</button>
     <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
 </div>
 
@@ -429,19 +427,15 @@ const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/
 //
 // 1) GENERATE during report creation (type minutes in the controls bar and click Generate, or
 //    add ?driveMins=15,30,45 to the link). The page calls the ArcGIS service area service from the
-//    center of ALL selected wells, once per report. Needs an API key with ROUTING privileges (ArcGIS Online >
-//    Content > New item > Developer credentials). Restrict the key to your GitHub Pages URL.
-//    Credits are charged to the account that owns the key.
+//    center of ALL selected wells, once per report. The user signs in with their ArcGIS Online username and
+//    password (the account needs routing privileges); credits are charged to that account.
 //
 // 2) LOAD a layer saved from the Experience Builder tool: ?drive=<item ID or layer URL>
 //    (optionally &driveWhere=<SQL filter>). That layer must be shared with Everyone.
 //
 // If both are set, the generated areas win.
-// The key is NOT stored in this file (the repo is public). Paste it into the "API key" box in the
-// controls bar once; it is kept only in this browser's local storage, never in the repo.
-let API_KEY = "";
-try { API_KEY = localStorage.getItem("lithoReportApiKey") || ""; } catch (e) {}
-document.getElementById("keyInput").value = API_KEY;
+// No key is stored in this file (the repo is public). The ArcGIS SDK shows its own sign-in dialog and the
+// user signs in with their ArcGIS Online username and password. Credits come from that account.
 const SERVICE_AREA_URL = "https://route-api.arcgis.com/arcgis/rest/services/World/ServiceAreas/NAServer/ServiceArea_World/solveServiceArea";
 const DEFAULT_BREAKS = [15, 30, 45];
 
@@ -520,15 +514,20 @@ function applyDriveLayer(){
 }
 
 // Rebuilds the report and generates drive-time areas for the minutes typed into the controls bar
-function generateDriveAreas(){
+// Opens the SDK's sign-in dialog (once per session) so later requests are authorized
+async function ensureSignedIn(){
+    const sdk = await loadArcGIS();
+    await sdk.esriId.getCredential("https://www.arcgis.com/sharing");
+}
+
+async function generateDriveAreas(){
     if (reportRunning) return;
-    const keyValue = document.getElementById("keyInput").value.trim();
-    if (!keyValue) {
-        alert("Paste your ArcGIS API key (with Routing privileges) into the API key box first.");
+    try {
+        await ensureSignedIn();
+    } catch (e) {
+        alert("Sign-in was cancelled or failed. Sign in with your ArcGIS Online username and password to generate drive-time areas.");
         return;
     }
-    API_KEY = keyValue;
-    try { localStorage.setItem("lithoReportApiKey", API_KEY); } catch (e) {}
     const breaks = parseBreaks(document.getElementById("minutesInput").value);
     if (breaks.length === 0) {
         alert("Enter one or more drive times in minutes, e.g. 15,30,45");
@@ -696,11 +695,11 @@ function loadArcGIS(){
         require([
             "esri/Map", "esri/views/MapView", "esri/Basemap", "esri/layers/TileLayer", "esri/layers/FeatureLayer", 
             "esri/layers/GraphicsLayer", "esri/Graphic", "esri/geometry/Extent", "esri/geometry/geometryEngine", "esri/rest/query",
-            "esri/core/reactiveUtils", "esri/config", "esri/rest/serviceArea", "esri/rest/support/ServiceAreaParameters", "esri/rest/support/FeatureSet", "esri/rest/networkService"
+            "esri/core/reactiveUtils", "esri/config", "esri/rest/serviceArea", "esri/rest/support/ServiceAreaParameters", "esri/rest/support/FeatureSet", "esri/rest/networkService", "esri/identity/IdentityManager"
         ], (Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query,
-            reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService) => {
+            reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService, esriId) => {
             resolve({ Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, geometryEngine, query,
-                      reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService });
+                      reactiveUtils, esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, networkService, esriId });
         });
     });
 }
@@ -789,11 +788,9 @@ async function loadSavedDriveLayer(arcgisSdk){
 // Generates drive-time areas from the mean center with the ArcGIS service area service
 async function generateFallbackDriveAreas(meanCenterGraphic, arcgisSdk, targetLayer, breaks){
     const { esriConfig, serviceArea, ServiceAreaParameters, FeatureSet, Graphic, networkService } = arcgisSdk;
-    esriConfig.apiKey = API_KEY;
-
-    // Look up the "Trucking Time" travel mode from the service itself
+    // Look up the "Trucking Time" travel mode from the service itself (uses the signed-in session)
     const networkUrl = SERVICE_AREA_URL.replace(/\/solveServiceArea$/, "");
-    const description = await networkService.fetchServiceDescription(networkUrl, API_KEY);
+    const description = await networkService.fetchServiceDescription(networkUrl);
     const modes = description.supportedTravelModes || [];
     const travelMode = modes.find(m => String(m.name).toLowerCase() === TRAVEL_MODE_NAME.toLowerCase());
     if (!travelMode) {
@@ -943,7 +940,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
         // Wells and mean center always draw; the drive-time areas come from the saved layer
-        // (?drive=...) or, if no layer was supplied and API_KEY is set, from the service area fallback.
+        // (?drive=...) or, after Sign in & Generate, from the shared drive-time areas generated once in initReport.
         const truckGraphicsLayer = new GraphicsLayer();
         const truckMapLayers = [];
         let truckExtent = new Extent({ xmin: cx - (halfW * 12), xmax: cx + (halfW * 12), ymin: cy - (halfH * 12), ymax: cy + (halfH * 12), spatialReference: { wkid: 102100 } });
@@ -955,7 +952,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         if (driveCache) {
             // Areas were generated once in initReport; just copy them onto this page's map
             if (driveCache.error) {
-                truckCaptionText = "Drive-time generation failed: " + ((driveCache.error && driveCache.error.message) || "check the API key and routing privileges");
+                truckCaptionText = "Drive-time generation failed: " + ((driveCache.error && driveCache.error.message) || "check your sign-in and routing privileges");
             } else if (driveCache.count > 0) {
                 driveCache.layer.graphics.forEach(g => truckGraphicsLayer.add(g.clone()));
                 const biggest = driveCache.layer.graphics.getItemAt(0); // sorted largest first
@@ -1244,7 +1241,7 @@ async function initReport(){
 
     // Run the drive-time tool ONCE for the whole report, from the center of all selected wells
     driveCache = null;
-    if (generateBreaks && API_KEY && allFeatures.length > 0) {
+    if (generateBreaks && allFeatures.length > 0) {
         try {
             const sdk = await loadArcGIS();
             const masterLayer = new sdk.GraphicsLayer();
