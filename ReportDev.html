@@ -939,7 +939,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         const arcgis = await loadArcGIS();
         const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
 
-        // --- 1. MAIN WELL MAP (Page 1 with Interactive Click Selection) ---
+        // --- 1. MAIN WELL MAP (Page 1 Live Interactive Map) ---
         const mainGraphicsLayer = new GraphicsLayer();
         allFeatures.forEach(f => {
             const id = f.attributes[WELLS_ID_FIELD];
@@ -962,7 +962,6 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         const mainExtent = new Extent({ xmin: cx - halfW, xmax: cx + halfW, ymin: cy - halfH, ymax: cy + halfH, spatialReference: { wkid: 102100 } });
 
-        // Add individual feature layers so they are fully queryable on click
         const parcelLayersList = PARCEL_LAYER_URLS.map(url => new FeatureLayer({ url: url, renderer: polygonRenderer, outFields: ["*"] }));
 
         const mainMap = new Map({
@@ -1170,7 +1169,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         ]);
         await Promise.race([mapReadyPromise, new Promise(resolve => setTimeout(resolve, 60000))]);
 
-        const mainShot = await mainView.takeScreenshot({ format: "jpg", quality: 100 });
+        // Keep mainView live and interactive, snapshot only quadrants 1-3
         const truckShot = await truckView.takeScreenshot({ format: "jpg", quality: 100 });
         const wetlandShot = await wetlandView.takeScreenshot({ format: "jpg", quality: 100 });
         const contourShot = await contourView.takeScreenshot({ format: "jpg", quality: 100 });
@@ -1183,7 +1182,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             document.getElementById(captionId).textContent = captionText;
         };
 
-        setImg(mainShotImgId, mainShot, mainViewDivId, mainCaptionId, `Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")} | Scale 1:${Math.round(mainView.scale).toLocaleString()}`);
+        document.getElementById(mainCaptionId).textContent = `Click any parcel boundary on the map to calculate acreage | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
         setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, truckCaptionText);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
@@ -1193,7 +1192,8 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             if (legendEl) legendEl.innerHTML = truckLegendHtml;
         }
 
-        mainView.destroy(); truckView.destroy(); wetlandView.destroy(); contourView.destroy();
+        // Clean up memory for off-screen views only, keeping mainView active for clicks!
+        truckView.destroy(); wetlandView.destroy(); contourView.destroy();
     } catch (err) {
         console.error("Map generation error on section " + sectionIdx, err);
     }
@@ -1415,11 +1415,33 @@ async function initReport(){
 // ======================================================
 // PDF EXPORT
 // ======================================================
-function downloadPDF(){
+async function downloadPDF(){
+    const btn = document.getElementById("pdfBtn");
+    btn.disabled = true;
+    btn.textContent = "Generating PDF...";
+
     const rawTitle = getCustomTitle();
     const safeFilename = rawTitle.replace(/[^a-zA-Z0-9-_]/g, "_") + "_Landscape.pdf";
 
-    html2pdf()
+    // Capture the live Page 1 map views into static images right before building PDF
+    for (let sectionIdx = 0; sectionIdx < totalSections; sectionIdx++) {
+        const mainViewDiv = document.getElementById(`mapView_main_${sectionIdx}`);
+        const mainShotImg = document.getElementById(`mapShot_main_${sectionIdx}`);
+        if (mainViewDiv && mainViewDiv.style.display !== "none") {
+            try {
+                const canvas = mainViewDiv.querySelector("canvas");
+                if (canvas) {
+                    mainShotImg.src = canvas.toDataURL("image/jpeg", 0.95);
+                    mainShotImg.style.display = "block";
+                    mainViewDiv.style.display = "none";
+                }
+            } catch (e) {
+                console.warn("PDF screenshot capture error:", e);
+            }
+        }
+    }
+
+    await html2pdf()
         .set({
             margin: 0,
             filename: safeFilename,
@@ -1429,6 +1451,9 @@ function downloadPDF(){
         })
         .from(document.getElementById("report"))
         .save();
+
+    btn.disabled = false;
+    btn.textContent = "Download PDF";
 }
 
 initReport();
