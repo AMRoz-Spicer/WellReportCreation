@@ -586,7 +586,7 @@ async function runContourTool(aoi, interval, arcgisSdk){
     const task = await esriRequest(taskUrl, { query: { f: "json" }, responseType: "json" });
     const names = ((task.data && task.data.parameters) || []).map(p => p.name);
     [CONTOUR_INTERVAL_PARAM, CONTOUR_AOI_PARAM, CONTOUR_OUTPUT_PARAM].forEach(n => {
-        if (!names.includes(n)) throw new Error(`Contour tool parameter "${n}" not found. Available: ${names.join(", ")}`);
+        if (!names.includes(n)) throw new Error(`Contour tool parameter "${n}" not found.`);
     });
 
     const aoiSet = new FeatureSet({
@@ -616,11 +616,10 @@ async function runContourTool(aoi, interval, arcgisSdk){
         await job.waitForJobCompletion({
             interval: 3000,
             signal: controller.signal,
-            statusCallback: info => setContourStatus(`Contour tool: ${info.jobStatus} (${Math.round((Date.now() - started) / 1000)} s)`)
+            statusCallback: info => setContourStatus(`Contour tool: ${info.jobStatus}`)
         });
         if (job.jobStatus !== "job-succeeded") {
-            const msgs = (job.messages || []).map(m => m.description).filter(Boolean).slice(-3).join(" | ");
-            throw new Error(`Contour tool ${job.jobStatus}. ${msgs}`);
+            throw new Error(`Contour tool ${job.jobStatus}.`);
         }
         const result = await job.fetchResultData(CONTOUR_OUTPUT_PARAM);
         return result.value;
@@ -963,18 +962,12 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         const mainExtent = new Extent({ xmin: cx - halfW, xmax: cx + halfW, ymin: cy - halfH, ymax: cy + halfH, spatialReference: { wkid: 102100 } });
 
+        // Add individual feature layers so they are fully queryable on click
+        const parcelLayersList = PARCEL_LAYER_URLS.map(url => new FeatureLayer({ url: url, renderer: polygonRenderer, outFields: ["*"] }));
+
         const mainMap = new Map({
             basemap: new Basemap({ baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ] }),
-            layers: [
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[0], renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[1], renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[2], renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[3], renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[4], renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[5], renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYER_URLS[6], renderer: polygonRenderer }),
-                mainGraphicsLayer
-            ]
+            layers: [ ...parcelLayersList, mainGraphicsLayer ]
         });
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
@@ -982,7 +975,8 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         // --- Interactive Map Click Handler for Parcel Selection ---
         mainView.on("click", async (event) => {
             const mapPoint = mainView.toMap(event);
-            const clickBuffer = arcgis.geometryEngine.buffer(mapPoint, 2, "meters");
+            document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Searching...";
+            
             let foundParcelFeature = null;
             let foundAcres = 0;
 
@@ -990,7 +984,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 if (foundParcelFeature) break;
                 try {
                     const queryResults = await arcgis.query.executeQueryJSON(url, {
-                        geometry: clickBuffer || mapPoint,
+                        geometry: mapPoint,
                         spatialRelationship: "intersects",
                         outFields: ["*"],
                         returnGeometry: true,
@@ -1001,12 +995,14 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                         const areaAcres = arcgis.geometryEngine.geodesicArea(foundParcelFeature.geometry, "acres");
                         foundAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.warn("Parcel query error on layer:", e);
+                }
             }
 
             if (foundParcelFeature) {
                 const attrs = foundParcelFeature.attributes;
-                const parcelId = attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.OBJECTID || "Selected Parcel";
+                const parcelId = attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel";
                 
                 document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelId;
                 document.getElementById(`inputAcreage_${sectionIdx}`).value = foundAcres.toFixed(2);
@@ -1015,10 +1011,13 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 mainView.graphics.removeAll();
                 mainView.graphics.add(new arcgis.Graphic({
                     geometry: foundParcelFeature.geometry,
-                    symbol: { type: "simple-fill", color: [0, 90, 255, 0.35], outline: { color: [0, 90, 255, 1], width: 2 } }
+                    symbol: { type: "simple-fill", color: [0, 120, 255, 0.4], outline: { color: [0, 80, 255, 1], width: 2 } }
                 }));
             } else {
-                alert("No parcel found at this click location. Try clicking directly within a parcel boundary.");
+                document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Not found";
+                document.getElementById(`inputAcreage_${sectionIdx}`).value = "0.00";
+                updateCalculations(sectionIdx);
+                alert("No parcel found at this exact point. Try clicking closer to the center of the parcel.");
             }
         });
 
