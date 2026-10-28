@@ -139,10 +139,24 @@ button:disabled {
     font-size: 9px;
 }
 
+.map-legend-box {
+    position: absolute;
+    bottom: 22px;
+    right: 4px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #bbb;
+    padding: 4px 6px;
+    font-size: 8px;
+    z-index: 10;
+    max-width: 200px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
 .legend-item {
     display: flex;
     align-items: center;
     gap: 3px;
+    margin-bottom: 2px;
 }
 
 .swatch {
@@ -195,46 +209,12 @@ button:disabled {
     flex: none;
 }
 
-/* Map Overlays / Legends */
-.map-legend-overlay {
-    position: absolute;
-    bottom: 22px;
-    right: 6px;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid #aaa;
-    padding: 4px 6px;
-    font-size: 8px;
-    z-index: 10;
-    border-radius: 2px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
-.map-legend-title {
-    font-weight: bold;
-    margin-bottom: 2px;
-    border-bottom: 1px solid #ccc;
-    padding-bottom: 1px;
-}
-
-.map-legend-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 2px;
-}
-
-.map-legend-swatch {
-    width: 10px;
-    height: 8px;
-    border: 1px solid #333;
-}
-
 /* Calculation Form Styles (Quadrant 4) */
 .calc-form-container {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    font-size: 9.5px;
+    font-size: 10px;
     overflow-y: auto;
     flex: 1;
 }
@@ -255,38 +235,17 @@ button:disabled {
 }
 
 .calc-row input, .calc-row select {
-    width: 130px;
-    padding: 3px 5px;
-    font-size: 9.5px;
+    width: 140px;
+    padding: 3px 6px;
+    font-size: 10px;
     border: 1px solid #888;
     border-radius: 2px;
 }
 
 .calc-row input[readonly] {
+    text-align: right;
     background: #eee;
     font-weight: bold;
-    text-align: right;
-}
-
-.calc-btn-row {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 2px;
-}
-
-.calc-btn {
-    padding: 4px 10px;
-    font-size: 10px;
-    background: #005e95;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    font-weight: bold;
-}
-
-.calc-btn:hover {
-    background: #004b78;
 }
 
 .map-wrapper {
@@ -433,19 +392,19 @@ button:disabled {
 <div id="controls">
     <label for="titleInput">Title:</label>
     <input type="text" id="titleInput" value="Lithology Report" oninput="updateReportTitles()">
-    <label for="driveInput">Drive-time layer:</label>
-    <input type="text" id="driveInput" placeholder="Item ID or URL">
+    <label for="driveInput">Drive-time layer (item ID or layer URL):</label>
+    <input type="text" id="driveInput" placeholder="Paste saved drive-time layer ID or URL">
     <button id="driveBtn" onclick="applyDriveLayer()">Apply</button>
-    <label for="minutesInput">Drive times (min):</label>
-    <input type="text" id="minutesInput" value="15,30,45" style="width:70px; padding:6px 8px; font-size:13px; border:1px solid #888; border-radius:3px;">
-    <button id="genDriveBtn" onclick="generateDriveAreas()">Generate</button>
-    <label for="contourInput">Contours:</label>
-    <select id="contourInput" style="padding:6px 8px; font-size:13px; border:1px solid #888; border-radius:3px;">
-        <option value="1">1 ft</option>
-        <option value="2" selected>2 ft</option>
+    <label for="minutesInput">Or generate drive times (min):</label>
+    <input type="text" id="minutesInput" value="15,30,45" style="width:90px; padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
+    <button id="genDriveBtn" onclick="generateDriveAreas()">Generate drive times</button>
+    <label for="contourInput">Contours (ft):</label>
+    <select id="contourInput" style="padding:6px 10px; font-size:13px; border:1px solid #888; border-radius:3px;">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
     </select>
-    <button id="contourBtn" onclick="generateContours()">Contours</button>
-    <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing...</button>
+    <button id="contourBtn" onclick="generateContours()">Generate contours</button>
+    <button id="pdfBtn" onclick="downloadPDF()" disabled>Preparing report...</button>
 </div>
 
 <div id="report">
@@ -464,20 +423,21 @@ const TOPO_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_T
 
 const MIN_MAP_SPAN_M = 600;
 
-// Wetland Layer URL
+// Hardcoded Wetland Layer URL
 const WETLAND_LAYER_URL = "https://services3.arcgis.com/dxRQUfTDNtfqZ301/arcgis/rest/services/EGLE_Part303StateWetlandInventory/FeatureServer/0";
 
 const SERVICE_AREA_URL = "https://route-api.arcgis.com/arcgis/rest/services/World/ServiceAreas/NAServer/ServiceArea_World/solveServiceArea";
+const DEFAULT_BREAKS = [15, 30, 45];
 const TRAVEL_MODE_NAME = "Trucking Time";
 
 const CONTOUR_GP_SERVICE_URL = "https://notebookswebtools8.arcgis.com/arcgis/rest/services/0a8fc171b4a1445f8d39c751414ce0a5/GPServer";
-const CONTOUR_TASK_NAME = "";                 
+const CONTOUR_TASK_NAME = "";
 const CONTOUR_INTERVAL_PARAM = "contour_interval";
 const CONTOUR_AOI_PARAM = "input_aoi";
 const CONTOUR_OUTPUT_PARAM = "output_layer_url";
-const CONTOUR_PAD_FRACTION = 0.10;            
-const MAX_CONTOUR_SIDE_FT = 6000;             
-const CONTOUR_TIMEOUT_MS = 15 * 60 * 1000;    
+const CONTOUR_PAD_FRACTION = 0.10;
+const MAX_CONTOUR_SIDE_FT = 6000;
+const CONTOUR_TIMEOUT_MS = 15 * 60 * 1000;
 
 const DRIVE_COLORS = [
     [0, 170, 0, 0.45],
@@ -487,8 +447,7 @@ const DRIVE_COLORS = [
     [0, 90, 200, 0.45]
 ];
 
-// 7 County Options for Parcel Lookup
-const PARCEL_COUNTIES = [
+const PARCEL_LAYERS = [
     { name: "Clinton County", url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0" },
     { name: "Eaton County", url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87" },
     { name: "Ingham County", url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0" },
@@ -522,8 +481,8 @@ let driveLayerParam = (params.get("drive") || "").trim();
 let generateBreaks = params.get("driveMins") ? parseBreaks(params.get("driveMins")) : null;
 if (generateBreaks && generateBreaks.length === 0) generateBreaks = null;
 let reportRunning = false;
-let driveCache = null; 
-let contourCache = null; 
+let driveCache = null;
+let contourCache = null;
 let generateContourInterval = Number(params.get("contourFt")) > 0 ? Number(params.get("contourFt")) : null;
 
 document.getElementById("titleInput").value = titleParam;
@@ -546,7 +505,7 @@ function getCustomTitle(){
 function applyDriveLayer(){
     if (reportRunning) return;
     driveLayerParam = document.getElementById("driveInput").value.trim();
-    generateBreaks = null; 
+    generateBreaks = null;
     initReport();
 }
 
@@ -584,9 +543,6 @@ async function generateContours(){
     initReport();
 }
 
-// ======================================================
-// CONTOURS
-// ======================================================
 function setContourStatus(text){
     document.querySelectorAll('[id^="mapCaption_contour_"]').forEach(el => { el.textContent = text; });
 }
@@ -630,7 +586,7 @@ async function runContourTool(aoi, interval, arcgisSdk){
     const task = await esriRequest(taskUrl, { query: { f: "json" }, responseType: "json" });
     const names = ((task.data && task.data.parameters) || []).map(p => p.name);
     [CONTOUR_INTERVAL_PARAM, CONTOUR_AOI_PARAM, CONTOUR_OUTPUT_PARAM].forEach(n => {
-        if (!names.includes(n)) throw new Error(`Contour tool parameter "${n}" not found.`);
+        if (!names.includes(n)) throw new Error(`Contour tool parameter "${n}" not found. Available: ${names.join(", ")}`);
     });
 
     const aoiSet = new FeatureSet({
@@ -655,7 +611,7 @@ async function runContourTool(aoi, interval, arcgisSdk){
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CONTOUR_TIMEOUT_MS);
     try {
-        setContourStatus("Running contour tool...");
+        setContourStatus("Running the contour tool (this can take several minutes)...");
         const job = await geoprocessor.submitJob(taskUrl, toolParams);
         await job.waitForJobCompletion({
             interval: 3000,
@@ -663,7 +619,8 @@ async function runContourTool(aoi, interval, arcgisSdk){
             statusCallback: info => setContourStatus(`Contour tool: ${info.jobStatus} (${Math.round((Date.now() - started) / 1000)} s)`)
         });
         if (job.jobStatus !== "job-succeeded") {
-            throw new Error(`Contour tool ${job.jobStatus}.`);
+            const msgs = (job.messages || []).map(m => m.description).filter(Boolean).slice(-3).join(" | ");
+            throw new Error(`Contour tool ${job.jobStatus}. ${msgs}`);
         }
         const result = await job.fetchResultData(CONTOUR_OUTPUT_PARAM);
         return result.value;
@@ -889,7 +846,7 @@ async function loadSavedDriveLayer(arcgisSdk){
             field: breakField.name,
             uniqueValueInfos: breaks.map((value, i) => ({
                 value: value,
-                label: String(value),
+                label: String(value) + " min",
                 symbol: {
                     type: "simple-fill",
                     color: DRIVE_COLORS[i % DRIVE_COLORS.length],
@@ -927,11 +884,11 @@ async function generateFallbackDriveAreas(meanCenterGraphic, arcgisSdk, targetLa
 
     const saParams = new ServiceAreaParameters({
         facilities: new FeatureSet({ features: [ new Graphic({ geometry: meanCenterGraphic.geometry }) ] }),
-        defaultBreaks: breaks,              
+        defaultBreaks: breaks,
         travelMode: travelMode,
-        travelDirection: "from-facility",   
-        overlapping: true,                  
-        outputPolygons: "simplified",       
+        travelDirection: "from-facility",
+        overlapping: true,
+        outputPolygons: "simplified",
         trimOuterPolygon: true,
         outSpatialReference: { wkid: 102100 }
     });
@@ -956,84 +913,62 @@ async function generateFallbackDriveAreas(meanCenterGraphic, arcgisSdk, targetLa
     return polys.length;
 }
 
-// User-Selected County & Parcel ID Lookup Function
-async function lookupParcelAcreage(sectionIdx) {
-    const countySelect = document.getElementById(`countySelect_${sectionIdx}`);
-    const parcelInput = document.getElementById(`parcelIdInput_${sectionIdx}`);
+// Function to look up parcel acreage interactively based on county and parcel ID
+async function lookupParcelAcreage(sectionIdx){
+    const countyIndex = parseInt(document.getElementById(`countySelect_${sectionIdx}`).value);
+    const parcelId = document.getElementById(`parcelIdInput_${sectionIdx}`).value.trim();
     const acreageInput = document.getElementById(`inputAcreage_${sectionIdx}`);
-
-    const countyUrl = countySelect.value;
-    const parcelId = parcelInput.value.trim();
-
+    
     if (!parcelId) {
         alert("Please enter a Parcel ID.");
         return;
     }
 
     acreageInput.value = "Searching...";
-
+    
     try {
         const arcgisSdk = await loadArcGIS();
-        const { query } = arcgisSdk;
-
-        // Try querying using common parcel identifier field names across Michigan county schemas
-        const possibleFields = ["PARCEL_ID", "PARCELID", "PIN", "TAX_ID", "ACCOUNT_NUM", "PARCEL_NUM", "GIS_ID"];
-        let foundFeature = null;
-
-        for (const field of possibleFields) {
-            try {
-                const results = await query.executeQueryJSON(countyUrl, {
-                    where: `UPPER(${field}) = UPPER('${parcelId.replaceAll("'", "''")}')`,
-                    outFields: ["*"],
-                    returnGeometry: true,
-                    outSpatialReference: { wkid: 102100 }
-                });
-                if (results.features && results.features.length > 0) {
-                    foundFeature = results.features[0];
-                    break;
-                }
-            } catch (err) {
-                // Continue trying other fields if current field is not present in schema
-            }
+        const parcelUrl = PARCEL_LAYERS[countyIndex].url;
+        
+        // Query layer fields first to find valid parcel ID fields
+        const layerInfo = await arcgisSdk.esriRequest(parcelUrl, { query: { f: "json" }, responseType: "json" });
+        const fields = (layerInfo.data && layerInfo.data.fields) || [];
+        const fieldNames = fields.map(f => f.name);
+        
+        // Find possible ID match fields
+        const possibleIdFields = fieldNames.filter(n => /parcel|pin|account|tax|id|num/i.test(n));
+        
+        let queryWhere = "";
+        if (possibleIdFields.length > 0) {
+            queryWhere = possibleIdFields.map(f => `${f} = '${parcelId.replace(/'/g, "''")}' OR ${f} LIKE '%${parcelId.replace(/'/g, "''")}%'`).join(" OR ");
+        } else {
+            queryWhere = `1=1`;
         }
 
-        if (!foundFeature) {
-            // Fallback: fuzzy/wildcard search on first string field if exact match fails
-            const res = await query.executeQueryJSON(countyUrl, {
-                where: "1=1",
-                resultRecordCount: 1,
-                outFields: ["*"],
-                returnGeometry: false
-            });
-            if (res.fields) {
-                const stringField = res.fields.find(f => f.type === "esriFieldTypeString");
-                if (stringField) {
-                    const fuzzyRes = await query.executeQueryJSON(countyUrl, {
-                        where: `UPPER(${stringField.name}) LIKE UPPER('%${parcelId.replaceAll("'", "''")}%')`,
-                        outFields: ["*"],
-                        returnGeometry: true,
-                        outSpatialReference: { wkid: 102100 }
-                    });
-                    if (fuzzyRes.features && fuzzyRes.features.length > 0) {
-                        foundFeature = fuzzyRes.features[0];
-                    }
-                }
-            }
-        }
+        const queryResults = await arcgisSdk.query.executeQueryJSON(parcelUrl, {
+            where: queryWhere,
+            outFields: ["*"],
+            returnGeometry: true,
+            outSpatialReference: { wkid: 102100 },
+            num: 1
+        });
 
-        if (foundFeature) {
-            const areaAcres = arcgisSdk.geometryEngine.geodesicArea(foundFeature.geometry, "acres");
+        if (queryResults.features && queryResults.features.length > 0) {
+            const parcelFeature = queryResults.features[0];
+            const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcelFeature.geometry, "acres");
             const finalAcres = areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "0.00";
             acreageInput.value = finalAcres;
             updateCalculations(sectionIdx);
         } else {
             acreageInput.value = "0.00";
-            alert("Parcel ID not found in the selected county layer. Please check the ID.");
+            alert("Parcel ID not found in " + PARCEL_LAYERS[countyIndex].name + ".");
+            updateCalculations(sectionIdx);
         }
-    } catch (e) {
-        console.error("Parcel lookup error:", e);
+    } catch (err) {
+        console.error("Parcel lookup error:", err);
         acreageInput.value = "0.00";
-        alert("Error querying parcel layer. Check network connection or ID format.");
+        alert("Error querying parcel layer. Check Parcel ID and internet connection.");
+        updateCalculations(sectionIdx);
     }
 }
 
@@ -1045,16 +980,16 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     const truckViewDivId = `mapView_truck_${sectionIdx}`;
     const truckShotImgId = `mapShot_truck_${sectionIdx}`;
     const truckCaptionId = `mapCaption_truck_${sectionIdx}`;
+    const truckLegendId = `mapLegend_truck_${sectionIdx}`;
 
     const wetlandViewDivId = `mapView_wetland_${sectionIdx}`;
     const wetlandShotImgId = `mapShot_wetland_${sectionIdx}`;
     const wetlandCaptionId = `mapCaption_wetland_${sectionIdx}`;
+    const wetlandLegendId = `mapLegend_wetland_${sectionIdx}`;
 
     const contourViewDivId = `mapView_contour_${sectionIdx}`;
     const contourShotImgId = `mapShot_contour_${sectionIdx}`;
     const contourCaptionId = `mapCaption_contour_${sectionIdx}`;
-
-    const calcFormContainerId = `calcFormContainer_${sectionIdx}`;
 
     const sectionFeatures = allFeatures.filter(f => sectionWellIds.includes(String(f.attributes[WELLS_ID_FIELD])));
     if(sectionFeatures.length === 0) return;
@@ -1063,7 +998,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
     try {
         const arcgis = await loadArcGIS();
-        const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent } = arcgis;
+        const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
 
         // --- 1. MAIN WELL MAP (Page 1) ---
         const mainGraphicsLayer = new GraphicsLayer();
@@ -1091,47 +1026,63 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         const mainMap = new Map({
             basemap: new Basemap({ baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ] }),
             layers: [
-                new FeatureLayer({ url: PARCEL_COUNTIES[0].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_COUNTIES[1].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_COUNTIES[2].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_COUNTIES[3].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_COUNTIES[4].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_COUNTIES[5].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_COUNTIES[6].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[0].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[1].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[2].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[3].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[4].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[5].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYERS[6].url, renderer: polygonRenderer }),
                 mainGraphicsLayer
             ]
         });
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 2. DRIVE-TIME MAP (Top-Right Quadrant + Legend) ---
+        // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
         const truckGraphicsLayer = new GraphicsLayer();
         const truckMapLayers = [];
         let truckExtent = new Extent({ xmin: cx - (halfW * 12), xmax: cx + (halfW * 12), ymin: cy - (halfH * 12), ymax: cy + (halfH * 12), spatialReference: { wkid: 102100 } });
-        let truckCaptionText = "No drive-time areas yet. Enter minutes and click Generate.";
+        let truckCaptionText = "No drive-time areas yet. Enter minutes and click Generate, or paste a saved layer ID above.";
+        let truckLegendHtml = "";
 
         const meanCenterGraphic = calculateMeanCenter(allFeatures, arcgis);
 
-        let activeBreaks = generateBreaks || [15, 30, 45];
         if (driveCache) {
             if (driveCache.error) {
-                truckCaptionText = "Drive-time generation failed.";
+                truckCaptionText = "Drive-time generation failed: " + ((driveCache.error && driveCache.error.message) || "check sign-in");
             } else if (driveCache.count > 0) {
                 driveCache.layer.graphics.forEach(g => truckGraphicsLayer.add(g.clone()));
                 const biggest = driveCache.layer.graphics.getItemAt(0);
                 if (biggest && biggest.geometry && biggest.geometry.extent) {
                     truckExtent = biggest.geometry.extent.clone().expand(1.15);
                 }
-                truckCaptionText = `${TRAVEL_MODE_NAME} areas from center of all selected wells`;
+                truckCaptionText = `${TRAVEL_MODE_NAME} areas (${generateBreaks.join(", ")} min)`;
+                
+                // Build Drive-Time Legend HTML
+                truckLegendHtml = generateBreaks.map((b, i) => {
+                    const col = DRIVE_COLORS[i % DRIVE_COLORS.length];
+                    const rgba = `rgba(${col[0]},${col[1]},${col[2]},0.7)`;
+                    return `<div class="legend-item"><span class="swatch" style="background:${rgba}"></span>${b} min</div>`;
+                }).join("");
+            } else {
+                truckCaptionText = "No drive-time areas returned.";
             }
         } else if (driveLayerParam) {
             try {
                 const drive = await loadSavedDriveLayer(arcgis);
                 truckMapLayers.push(drive.layer);
                 if (drive.extent) truckExtent = drive.extent.clone().expand(1.15);
-                if (drive.breaks.length) activeBreaks = drive.breaks;
-                truckCaptionText = "Drive-Time Areas Layer";
+                truckCaptionText = "Drive-Time Areas";
+                if (drive.breaks.length) {
+                    truckLegendHtml = drive.breaks.map((b, i) => {
+                        const col = DRIVE_COLORS[i % DRIVE_COLORS.length];
+                        const rgba = `rgba(${col[0]},${col[1]},${col[2]},0.7)`;
+                        return `<div class="legend-item"><span class="swatch" style="background:${rgba}"></span>${b} min</div>`;
+                    }).join("");
+                }
             } catch (driveErr) {
+                console.warn("Could not load drive-time layer:", driveErr);
                 truckCaptionText = "Drive-time layer could not be loaded.";
             }
         }
@@ -1149,7 +1100,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         truckView = new MapView({ container: truckViewDivId, map: truckMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- 3. WETLAND MAP (Top-Left Quadrant + Legend) ---
+        // --- 3. WETLAND MAP (Top-Left Quadrant) ---
         const wetlandLayers = [];
         if (WETLAND_LAYER_URL && !WETLAND_LAYER_URL.includes("your-gis-server")) {
             const wetlandRenderer = {
@@ -1159,12 +1110,12 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                     {
                         value: "5; 3; 7",
                         symbol: { type: "simple-fill", color: [140, 150, 50, 0.4], style: "backward-diagonal", outline: { color: [0, 100, 0, 1], width: 1 } },
-                        label: "NWI/MIRIS & Soils"
+                        label: "Wetland Soils & NWI/MIRIS"
                     },
                     {
                         value: "2; 4; 6",
                         symbol: { type: "simple-fill", color: [112, 168, 48, 0.6], outline: { color: [50, 100, 20, 1], width: 1 } },
-                        label: "NWI & MIRIS Maps"
+                        label: "NWI & MIRIS Wetlands"
                     },
                     {
                         value: "1",
@@ -1193,7 +1144,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         // --- 4. CONTOUR MAP (Bottom-Left Quadrant) ---
         const contourGraphicsLayer = new GraphicsLayer();
         const contourMapLayers = [];
-        let contourCaptionText = "No contours yet.";
+        let contourCaptionText = "No contours yet. Choose an interval and click Generate contours.";
 
         if (contourCache && contourCache.url) {
             contourMapLayers.push(new FeatureLayer({
@@ -1209,6 +1160,9 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             }));
             contourCaptionText = `${contourCache.interval} ft contours (USGS 3DEP)`;
         } else {
+            if (contourCache && contourCache.error) {
+                contourCaptionText = "Contour generation failed.";
+            }
             const contourExtentGraphic = calculateContourExtent(sectionFeatures, arcgis);
             if(contourExtentGraphic) contourGraphicsLayer.add(contourExtentGraphic);
         }
@@ -1256,59 +1210,11 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
 
-        // --- DYNAMIC LEGENDS OVERLAYS HTML INJECTION ---
-        // Build Drive-Time Legend HTML
-        let driveLegendHtml = `<div class="map-legend-overlay"><div class="map-legend-title">Drive Time (Min)</div>`;
-        activeBreaks.forEach((b, i) => {
-            const rgba = DRIVE_COLORS[i % DRIVE_COLORS.length];
-            const rgbCss = `rgb(${rgba[0]},${rgba[1]},${rgba[2]})`;
-            driveLegendHtml += `<div class="map-legend-row"><span class="map-legend-swatch" style="background:${rgbCss}"></span><span>${b} min</span></div>`;
-        });
-        driveLegendHtml += `</div>`;
-        document.getElementById(`mapView_truck_${sectionIdx}`).insertAdjacentHTML('afterend', driveLegendHtml);
-
-        // Build Wetland Legend HTML
-        const wetlandLegendHtml = `
-            <div class="map-legend-overlay">
-                <div class="map-legend-title">Wetlands</div>
-                <div class="map-legend-row"><span class="map-legend-swatch" style="background:rgba(140,150,50,0.6)"></span><span>NWI/MIRIS & Soils</span></div>
-                <div class="map-legend-row"><span class="map-legend-swatch" style="background:rgba(112,168,48,0.7)"></span><span>NWI & MIRIS Maps</span></div>
-                <div class="map-legend-row"><span class="map-legend-swatch" style="background:rgba(168,112,48,0.7)"></span><span>Wetland Soils</span></div>
-            </div>`;
-        document.getElementById(`mapView_wetland_${sectionIdx}`).insertAdjacentHTML('afterend', wetlandLegendHtml);
-
-        // --- CALCULATIONS FORM CONTAINER (Quadrant 4: County Dropdown & Parcel ID Lookup) ---
-        const calcContainer = document.getElementById(calcFormContainerId);
-        
-        let countyOptionsHtml = PARCEL_COUNTIES.map(c => `<option value="${c.url}">${c.name}</option>`).join("");
-
-        calcContainer.innerHTML = `
-            <div class="calc-form-container">
-                <div class="calc-row">
-                    <label>Select County:</label>
-                    <select id="countySelect_${sectionIdx}">${countyOptionsHtml}</select>
-                </div>
-                <div class="calc-row">
-                    <label>Parcel ID:</label>
-                    <input type="text" id="parcelIdInput_${sectionIdx}" placeholder="Enter Parcel ID">
-                </div>
-                <div class="calc-btn-row">
-                    <button class="calc-btn" onclick="lookupParcelAcreage(${sectionIdx})">Lookup Acreage</button>
-                </div>
-                <div class="calc-row" style="margin-top:4px;">
-                    <label>Acreage (Auto):</label>
-                    <input type="text" id="inputAcreage_${sectionIdx}" value="0.00" readonly>
-                </div>
-                <div class="calc-row">
-                    <label>Total Price ($):</label>
-                    <input type="text" id="inputPrice_${sectionIdx}" value="0.00" oninput="updateCalculations(${sectionIdx})">
-                </div>
-                <div class="calc-row">
-                    <label>Price Per Acre ($):</label>
-                    <input type="text" id="inputPricePerAcre_${sectionIdx}" value="0.00" readonly>
-                </div>
-            </div>
-        `;
+        // Populate map legends if HTML available
+        if (truckLegendHtml) {
+            const legendEl = document.getElementById(truckLegendId);
+            if (legendEl) legendEl.innerHTML = truckLegendHtml;
+        }
 
         mainView.destroy(); truckView.destroy(); wetlandView.destroy(); contourView.destroy();
     } catch (err) {
@@ -1316,6 +1222,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     }
 }
 
+// Live calculation script for Price Per Acre
 function updateCalculations(idx) {
     const acres = parseFloat(document.getElementById(`inputAcreage_${idx}`).value) || 0;
     const price = parseFloat(document.getElementById(`inputPrice_${idx}`).value.replace(/[^0-9.-]+/g,"")) || 0;
@@ -1338,7 +1245,7 @@ async function initReport(){
 
     reportRunning = true;
     btn.disabled = true;
-    btn.textContent = "Preparing...";
+    btn.textContent = "Preparing report...";
     document.getElementById("driveBtn").disabled = true;
     document.getElementById("genDriveBtn").disabled = true;
     document.getElementById("contourBtn").disabled = true;
@@ -1351,6 +1258,7 @@ async function initReport(){
     reportContainer.innerHTML = "";
 
     for(let sectionIdx = 0; sectionIdx < totalSections; sectionIdx++){
+        // --- PAGE 1: Charts & Main Well Map ---
         const page1Div = document.createElement("div");
         page1Div.className = "pdf-page";
         page1Div.id = `page1_${sectionIdx}`;
@@ -1370,30 +1278,44 @@ async function initReport(){
         `;
         reportContainer.appendChild(page1Div);
 
+        // --- PAGE 2: 4-Quadrant Layout ---
         const page2Div = document.createElement("div");
         page2Div.className = "pdf-page";
         page2Div.id = `page2_${sectionIdx}`;
         page2Div.innerHTML = `
             <div class="report-header" id="pageHeaderEl_p2_${sectionIdx}">Lithology Report - Wetlands, Drive-Time Areas, Contours & Data Calculations</div>
             <div class="page2-grid-section">
+                <!-- Quadrant 1: Wetlands Map -->
                 <div class="quadrant-box">
                     <div class="quadrant-title">Wetlands Analysis Map</div>
                     <div class="map-wrapper">
                         <div class="map-view-div" id="mapView_wetland_${sectionIdx}"></div>
                         <img class="map-shot-img" id="mapShot_wetland_${sectionIdx}" alt="Wetlands map">
+                        <div class="map-legend-box" id="mapLegend_wetland_${sectionIdx}">
+                            <div style="font-weight:bold; margin-bottom:2px;">Wetland Symbology</div>
+                            <div class="legend-item"><span class="swatch" style="background:rgba(140,150,50,0.6)"></span>Wetland Soils & NWI/MIRIS</div>
+                            <div class="legend-item"><span class="swatch" style="background:rgba(112,168,48,0.7)"></span>NWI & MIRIS Wetlands</div>
+                            <div class="legend-item"><span class="swatch" style="background:rgba(168,112,48,0.7)"></span>Wetland Soils</div>
+                        </div>
                     </div>
                     <div class="map-caption" id="mapCaption_wetland_${sectionIdx}">Loading wetlands...</div>
                 </div>
 
+                <!-- Quadrant 2: Drive-Time Areas Map -->
                 <div class="quadrant-box">
                     <div class="quadrant-title">Drive-Time Areas</div>
                     <div class="map-wrapper">
                         <div class="map-view-div" id="mapView_truck_${sectionIdx}"></div>
-                        <img class="map-shot-img" id="mapShot_truck_${sectionIdx}" alt="Drive-time map">
+                        <img class="map-shot-img" id="mapShot_truck_${sectionIdx}" alt="Drive-time areas map">
+                        <div class="map-legend-box" id="mapLegend_truck_${sectionIdx}">
+                            <div style="font-weight:bold; margin-bottom:2px;">Travel Zones</div>
+                            <div style="font-size:7.5px; color:#555;">Generate or load drive time to view breakdown.</div>
+                        </div>
                     </div>
                     <div class="map-caption" id="mapCaption_truck_${sectionIdx}">Loading drive-time areas...</div>
                 </div>
 
+                <!-- Quadrant 3: 2ft Contour Map -->
                 <div class="quadrant-box">
                     <div class="quadrant-title">Contour Map</div>
                     <div class="map-wrapper">
@@ -1403,10 +1325,41 @@ async function initReport(){
                     <div class="map-caption" id="mapCaption_contour_${sectionIdx}">Loading contours...</div>
                 </div>
 
+                <!-- Quadrant 4: Interactive Parcel Selection & Pricing Summary -->
                 <div class="quadrant-box">
-                    <div class="quadrant-title">Data Calculations & Pricing Summary</div>
-                    <div id="calcFormContainer_${sectionIdx}">
-                        <p style="font-size:10px; color:#555;">Loading form...</p>
+                    <div class="quadrant-title">Parcel Selection & Pricing Summary</div>
+                    <div class="calc-form-container">
+                        <div class="calc-row">
+                            <label>County:</label>
+                            <select id="countySelect_${sectionIdx}">
+                                <option value="0">Clinton County</option>
+                                <option value="1">Eaton County</option>
+                                <option value="2" selected>Ingham County</option>
+                                <option value="3">Ionia County</option>
+                                <option value="4">Jackson County</option>
+                                <option value="5">Shiawassee County</option>
+                                <option value="6">Washtenaw County</option>
+                            </select>
+                        </div>
+                        <div class="calc-row">
+                            <label>Parcel ID:</label>
+                            <input type="text" id="parcelIdInput_${sectionIdx}" placeholder="Enter Parcel ID">
+                        </div>
+                        <div class="calc-row">
+                            <button onclick="lookupParcelAcreage(${sectionIdx})" style="width:100%; padding:5px; background:#005e95; color:white; font-weight:bold; border:none; border-radius:3px; cursor:pointer;">Lookup Acreage</button>
+                        </div>
+                        <div class="calc-row">
+                            <label>Acreage (Auto):</label>
+                            <input type="text" id="inputAcreage_${sectionIdx}" value="0.00" readonly>
+                        </div>
+                        <div class="calc-row">
+                            <label>Total Price ($):</label>
+                            <input type="text" id="inputPrice_${sectionIdx}" value="0.00" oninput="updateCalculations(${sectionIdx})">
+                        </div>
+                        <div class="calc-row">
+                            <label>Price Per Acre ($):</label>
+                            <input type="text" id="inputPricePerAcre_${sectionIdx}" value="0.00" readonly>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1440,6 +1393,7 @@ async function initReport(){
             const count = await generateFallbackDriveAreas(center, sdk, masterLayer, generateBreaks);
             driveCache = { key: driveKey, layer: masterLayer, count: count, error: null };
         } catch (e) {
+            console.warn("Service area request failed:", e);
             driveCache = { layer: null, count: 0, error: e };
         }
     }
@@ -1451,12 +1405,13 @@ async function initReport(){
             const sdk = await loadArcGIS();
             const aoi = computeContourAoi(allFeatures);
             if (aoi.sideFt > MAX_CONTOUR_SIDE_FT) {
-                const ok = confirm(`Contour area side length is ${(aoi.sideFt / 5280).toFixed(1)} mi. Run anyway?`);
-                if (!ok) throw new Error("Cancelled.");
+                const ok = confirm(`The contour area is about ${Math.round(aoi.sideFt).toLocaleString()} ft on each side. Run anyway?`);
+                if (!ok) throw new Error("Contour run cancelled.");
             }
             const rawUrl = await runContourTool(aoi, generateContourInterval, sdk);
             contourCache = { key: contourKey, url: normalizeLayerUrl(rawUrl), interval: generateContourInterval, error: null };
         } catch (e) {
+            console.warn("Contour tool failed:", e);
             contourCache = { key: contourKey, url: null, interval: generateContourInterval, error: e };
         }
     }
