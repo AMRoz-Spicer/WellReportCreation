@@ -930,20 +930,20 @@ async function lookupParcelAcreage(sectionIdx){
         const arcgisSdk = await loadArcGIS();
         const parcelUrl = PARCEL_LAYERS[countyIndex].url;
         
-        // Query layer fields first to find valid parcel ID fields
-        const layerInfo = await arcgisSdk.esriRequest(parcelUrl, { query: { f: "json" }, responseType: "json" });
-        const fields = (layerInfo.data && layerInfo.data.fields) || [];
-        const fieldNames = fields.map(f => f.name);
-        
-        // Find possible ID match fields
-        const possibleIdFields = fieldNames.filter(n => /parcel|pin|account|tax|id|num/i.test(n));
-        
-        let queryWhere = "";
-        if (possibleIdFields.length > 0) {
-            queryWhere = possibleIdFields.map(f => `${f} = '${parcelId.replace(/'/g, "''")}' OR ${f} LIKE '%${parcelId.replace(/'/g, "''")}%'`).join(" OR ");
-        } else {
-            queryWhere = `1=1`;
+        // Fetch layer definition to inspect actual field names
+        let idField = "OBJECTID"; // safe default fallback
+        try {
+            const layerInfo = await arcgisSdk.esriRequest(parcelUrl, { query: { f: "json" }, responseType: "json" });
+            const fields = (layerInfo.data && layerInfo.data.fields) || [];
+            // Look for common parcel number field names across Michigan county schemas
+            const match = fields.find(f => /parcel|pin|taxn|par_num|id|account/i.test(f.name));
+            if (match) idField = match.name;
+        } catch (e) {
+            console.warn("Could not fetch field metadata, falling back to general text query.", e);
         }
+
+        // Construct query using the discovered field or general query
+        const queryWhere = `${idField} = '${parcelId.replace(/'/g, "''")}' OR ${idField} LIKE '%${parcelId.replace(/'/g, "''")}%'`;
 
         const queryResults = await arcgisSdk.query.executeQueryJSON(parcelUrl, {
             where: queryWhere,
@@ -960,14 +960,30 @@ async function lookupParcelAcreage(sectionIdx){
             acreageInput.value = finalAcres;
             updateCalculations(sectionIdx);
         } else {
-            acreageInput.value = "0.00";
-            alert("Parcel ID not found in " + PARCEL_LAYERS[countyIndex].name + ".");
-            updateCalculations(sectionIdx);
+            // Fallback: Try querying OBJECTID if direct PIN lookup fails
+            const fallbackResults = await arcgisSdk.query.executeQueryJSON(parcelUrl, {
+                where: `OBJECTID = ${parseInt(parcelId) || 0}`,
+                outFields: ["*"],
+                returnGeometry: true,
+                outSpatialReference: { wkid: 102100 },
+                num: 1
+            });
+
+            if (fallbackResults.features && fallbackResults.features.length > 0) {
+                const parcelFeature = fallbackResults.features[0];
+                const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcelFeature.geometry, "acres");
+                acreageInput.value = areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "0.00";
+                updateCalculations(sectionIdx);
+            } else {
+                acreageInput.value = "0.00";
+                alert("Parcel ID not found in " + PARCEL_LAYERS[countyIndex].name + ". Please verify the ID format.");
+                updateCalculations(sectionIdx);
+            }
         }
     } catch (err) {
         console.error("Parcel lookup error:", err);
         acreageInput.value = "0.00";
-        alert("Error querying parcel layer. Check Parcel ID and internet connection.");
+        alert("Error querying parcel layer. Some county servers block cross-origin requests or require a secure proxy token.");
         updateCalculations(sectionIdx);
     }
 }
