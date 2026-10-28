@@ -143,7 +143,7 @@ button:disabled {
     position: absolute;
     bottom: 22px;
     right: 4px;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.92);
     border: 1px solid #bbb;
     padding: 4px 6px;
     font-size: 8px;
@@ -234,7 +234,7 @@ button:disabled {
     color: #333;
 }
 
-.calc-row input, .calc-row select {
+.calc-row input {
     width: 140px;
     padding: 3px 6px;
     font-size: 10px;
@@ -447,14 +447,14 @@ const DRIVE_COLORS = [
     [0, 90, 200, 0.45]
 ];
 
-const PARCEL_LAYERS = [
-    { name: "Clinton County", url: "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0" },
-    { name: "Eaton County", url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87" },
-    { name: "Ingham County", url: "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0" },
-    { name: "Ionia County", url: "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3" },
-    { name: "Jackson County", url: "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0" },
-    { name: "Shiawassee County", url: "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0" },
-    { name: "Washtenaw County", url: "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0" }
+const PARCEL_LAYER_URLS = [
+    "https://services5.arcgis.com/nax8we6GhQgsO77P/arcgis/rest/services/Clinton_Parcels_2024_with_data/FeatureServer/0",
+    "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/2023_Eaton_County_Parcels/FeatureServer/87",
+    "https://services3.arcgis.com/ySzhFSJfYeginRjx/arcgis/rest/services/Ingham_Parcels_2026/FeatureServer/0",
+    "https://services.arcgis.com/edGXqVKidagzAIPB/arcgis/rest/services/Ionia_County_Parcels/FeatureServer/3",
+    "https://gis.mijackson.org/countygis/rest/services/ParcelViewer/Parcels/FeatureServer/0",
+    "https://services7.arcgis.com/zssqyzc5LZ9oAgzn/arcgis/rest/services/Shiawassee_Parcel_PEA/FeatureServer/0",
+    "https://services1.arcgis.com/4ezfu5dIwH83BUNL/arcgis/rest/services/Washtenaw_County_Parcel_Data/FeatureServer/0"
 ];
 
 const polygonRenderer = {
@@ -913,81 +913,6 @@ async function generateFallbackDriveAreas(meanCenterGraphic, arcgisSdk, targetLa
     return polys.length;
 }
 
-// Function to look up parcel acreage interactively based on county and parcel ID
-async function lookupParcelAcreage(sectionIdx){
-    const countyIndex = parseInt(document.getElementById(`countySelect_${sectionIdx}`).value);
-    const parcelId = document.getElementById(`parcelIdInput_${sectionIdx}`).value.trim();
-    const acreageInput = document.getElementById(`inputAcreage_${sectionIdx}`);
-    
-    if (!parcelId) {
-        alert("Please enter a Parcel ID.");
-        return;
-    }
-
-    acreageInput.value = "Searching...";
-    
-    try {
-        const arcgisSdk = await loadArcGIS();
-        const parcelUrl = PARCEL_LAYERS[countyIndex].url;
-        
-        // Fetch layer definition to inspect actual field names
-        let idField = "OBJECTID"; // safe default fallback
-        try {
-            const layerInfo = await arcgisSdk.esriRequest(parcelUrl, { query: { f: "json" }, responseType: "json" });
-            const fields = (layerInfo.data && layerInfo.data.fields) || [];
-            // Look for common parcel number field names across Michigan county schemas
-            const match = fields.find(f => /parcel|pin|taxn|par_num|id|account/i.test(f.name));
-            if (match) idField = match.name;
-        } catch (e) {
-            console.warn("Could not fetch field metadata, falling back to general text query.", e);
-        }
-
-        // Construct query using the discovered field or general query
-        const queryWhere = `${idField} = '${parcelId.replace(/'/g, "''")}' OR ${idField} LIKE '%${parcelId.replace(/'/g, "''")}%'`;
-
-        const queryResults = await arcgisSdk.query.executeQueryJSON(parcelUrl, {
-            where: queryWhere,
-            outFields: ["*"],
-            returnGeometry: true,
-            outSpatialReference: { wkid: 102100 },
-            num: 1
-        });
-
-        if (queryResults.features && queryResults.features.length > 0) {
-            const parcelFeature = queryResults.features[0];
-            const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcelFeature.geometry, "acres");
-            const finalAcres = areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "0.00";
-            acreageInput.value = finalAcres;
-            updateCalculations(sectionIdx);
-        } else {
-            // Fallback: Try querying OBJECTID if direct PIN lookup fails
-            const fallbackResults = await arcgisSdk.query.executeQueryJSON(parcelUrl, {
-                where: `OBJECTID = ${parseInt(parcelId) || 0}`,
-                outFields: ["*"],
-                returnGeometry: true,
-                outSpatialReference: { wkid: 102100 },
-                num: 1
-            });
-
-            if (fallbackResults.features && fallbackResults.features.length > 0) {
-                const parcelFeature = fallbackResults.features[0];
-                const areaAcres = arcgisSdk.geometryEngine.geodesicArea(parcelFeature.geometry, "acres");
-                acreageInput.value = areaAcres && areaAcres > 0 ? areaAcres.toFixed(2) : "0.00";
-                updateCalculations(sectionIdx);
-            } else {
-                acreageInput.value = "0.00";
-                alert("Parcel ID not found in " + PARCEL_LAYERS[countyIndex].name + ". Please verify the ID format.");
-                updateCalculations(sectionIdx);
-            }
-        }
-    } catch (err) {
-        console.error("Parcel lookup error:", err);
-        acreageInput.value = "0.00";
-        alert("Error querying parcel layer. Some county servers block cross-origin requests or require a secure proxy token.");
-        updateCalculations(sectionIdx);
-    }
-}
-
 async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     const mainViewDivId = `mapView_main_${sectionIdx}`;
     const mainShotImgId = `mapShot_main_${sectionIdx}`;
@@ -1001,7 +926,6 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     const wetlandViewDivId = `mapView_wetland_${sectionIdx}`;
     const wetlandShotImgId = `mapShot_wetland_${sectionIdx}`;
     const wetlandCaptionId = `mapCaption_wetland_${sectionIdx}`;
-    const wetlandLegendId = `mapLegend_wetland_${sectionIdx}`;
 
     const contourViewDivId = `mapView_contour_${sectionIdx}`;
     const contourShotImgId = `mapShot_contour_${sectionIdx}`;
@@ -1016,7 +940,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         const arcgis = await loadArcGIS();
         const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
 
-        // --- 1. MAIN WELL MAP (Page 1) ---
+        // --- 1. MAIN WELL MAP (Page 1 with Interactive Click Selection) ---
         const mainGraphicsLayer = new GraphicsLayer();
         allFeatures.forEach(f => {
             const id = f.attributes[WELLS_ID_FIELD];
@@ -1042,18 +966,61 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         const mainMap = new Map({
             basemap: new Basemap({ baseLayers: [ new TileLayer({ url: IMAGERY_URL }) ] }),
             layers: [
-                new FeatureLayer({ url: PARCEL_LAYERS[0].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYERS[1].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYERS[2].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYERS[3].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYERS[4].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYERS[5].url, renderer: polygonRenderer }),
-                new FeatureLayer({ url: PARCEL_LAYERS[6].url, renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[0], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[1], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[2], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[3], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[4], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[5], renderer: polygonRenderer }),
+                new FeatureLayer({ url: PARCEL_LAYER_URLS[6], renderer: polygonRenderer }),
                 mainGraphicsLayer
             ]
         });
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
+
+        // --- Interactive Map Click Handler for Parcel Selection ---
+        mainView.on("click", async (event) => {
+            const mapPoint = mainView.toMap(event);
+            const clickBuffer = arcgis.geometryEngine.buffer(mapPoint, 2, "meters");
+            let foundParcelFeature = null;
+            let foundAcres = 0;
+
+            for (const url of PARCEL_LAYER_URLS) {
+                if (foundParcelFeature) break;
+                try {
+                    const queryResults = await arcgis.query.executeQueryJSON(url, {
+                        geometry: clickBuffer || mapPoint,
+                        spatialRelationship: "intersects",
+                        outFields: ["*"],
+                        returnGeometry: true,
+                        outSpatialReference: { wkid: 102100 }
+                    });
+                    if (queryResults.features && queryResults.features.length > 0) {
+                        foundParcelFeature = queryResults.features[0];
+                        const areaAcres = arcgis.geometryEngine.geodesicArea(foundParcelFeature.geometry, "acres");
+                        foundAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
+                    }
+                } catch (e) {}
+            }
+
+            if (foundParcelFeature) {
+                const attrs = foundParcelFeature.attributes;
+                const parcelId = attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.OBJECTID || "Selected Parcel";
+                
+                document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelId;
+                document.getElementById(`inputAcreage_${sectionIdx}`).value = foundAcres.toFixed(2);
+                updateCalculations(sectionIdx);
+
+                mainView.graphics.removeAll();
+                mainView.graphics.add(new arcgis.Graphic({
+                    geometry: foundParcelFeature.geometry,
+                    symbol: { type: "simple-fill", color: [0, 90, 255, 0.35], outline: { color: [0, 90, 255, 1], width: 2 } }
+                }));
+            } else {
+                alert("No parcel found at this click location. Try clicking directly within a parcel boundary.");
+            }
+        });
 
         // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
         const truckGraphicsLayer = new GraphicsLayer();
@@ -1066,7 +1033,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         if (driveCache) {
             if (driveCache.error) {
-                truckCaptionText = "Drive-time generation failed: " + ((driveCache.error && driveCache.error.message) || "check sign-in");
+                truckCaptionText = "Drive-time generation failed.";
             } else if (driveCache.count > 0) {
                 driveCache.layer.graphics.forEach(g => truckGraphicsLayer.add(g.clone()));
                 const biggest = driveCache.layer.graphics.getItemAt(0);
@@ -1075,7 +1042,6 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 }
                 truckCaptionText = `${TRAVEL_MODE_NAME} areas (${generateBreaks.join(", ")} min)`;
                 
-                // Build Drive-Time Legend HTML
                 truckLegendHtml = generateBreaks.map((b, i) => {
                     const col = DRIVE_COLORS[i % DRIVE_COLORS.length];
                     const rgba = `rgba(${col[0]},${col[1]},${col[2]},0.7)`;
@@ -1098,7 +1064,6 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                     }).join("");
                 }
             } catch (driveErr) {
-                console.warn("Could not load drive-time layer:", driveErr);
                 truckCaptionText = "Drive-time layer could not be loaded.";
             }
         }
@@ -1176,9 +1141,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             }));
             contourCaptionText = `${contourCache.interval} ft contours (USGS 3DEP)`;
         } else {
-            if (contourCache && contourCache.error) {
-                contourCaptionText = "Contour generation failed.";
-            }
+            if (contourCache && contourCache.error) contourCaptionText = "Contour generation failed.";
             const contourExtentGraphic = calculateContourExtent(sectionFeatures, arcgis);
             if(contourExtentGraphic) contourGraphicsLayer.add(contourExtentGraphic);
         }
@@ -1226,7 +1189,6 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
 
-        // Populate map legends if HTML available
         if (truckLegendHtml) {
             const legendEl = document.getElementById(truckLegendId);
             if (legendEl) legendEl.innerHTML = truckLegendHtml;
@@ -1238,7 +1200,6 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     }
 }
 
-// Live calculation script for Price Per Acre
 function updateCalculations(idx) {
     const acres = parseFloat(document.getElementById(`inputAcreage_${idx}`).value) || 0;
     const price = parseFloat(document.getElementById(`inputPrice_${idx}`).value.replace(/[^0-9.-]+/g,"")) || 0;
@@ -1345,24 +1306,12 @@ async function initReport(){
                 <div class="quadrant-box">
                     <div class="quadrant-title">Parcel Selection & Pricing Summary</div>
                     <div class="calc-form-container">
-                        <div class="calc-row">
-                            <label>County:</label>
-                            <select id="countySelect_${sectionIdx}">
-                                <option value="0">Clinton County</option>
-                                <option value="1">Eaton County</option>
-                                <option value="2" selected>Ingham County</option>
-                                <option value="3">Ionia County</option>
-                                <option value="4">Jackson County</option>
-                                <option value="5">Shiawassee County</option>
-                                <option value="6">Washtenaw County</option>
-                            </select>
+                        <div class="calc-row" style="background:#e8f4fd; border-color:#005e95; padding:5px;">
+                            <span style="font-size:9px; color:#005e95; font-weight:bold;">👉 Click any parcel on the Main Map (Page 1) to auto-select acreage!</span>
                         </div>
                         <div class="calc-row">
-                            <label>Parcel ID:</label>
-                            <input type="text" id="parcelIdInput_${sectionIdx}" placeholder="Enter Parcel ID">
-                        </div>
-                        <div class="calc-row">
-                            <button onclick="lookupParcelAcreage(${sectionIdx})" style="width:100%; padding:5px; background:#005e95; color:white; font-weight:bold; border:none; border-radius:3px; cursor:pointer;">Lookup Acreage</button>
+                            <label>Selected Parcel ID:</label>
+                            <input type="text" id="parcelIdInput_${sectionIdx}" value="None selected" readonly>
                         </div>
                         <div class="calc-row">
                             <label>Acreage (Auto):</label>
@@ -1409,7 +1358,6 @@ async function initReport(){
             const count = await generateFallbackDriveAreas(center, sdk, masterLayer, generateBreaks);
             driveCache = { key: driveKey, layer: masterLayer, count: count, error: null };
         } catch (e) {
-            console.warn("Service area request failed:", e);
             driveCache = { layer: null, count: 0, error: e };
         }
     }
@@ -1421,13 +1369,12 @@ async function initReport(){
             const sdk = await loadArcGIS();
             const aoi = computeContourAoi(allFeatures);
             if (aoi.sideFt > MAX_CONTOUR_SIDE_FT) {
-                const ok = confirm(`The contour area is about ${Math.round(aoi.sideFt).toLocaleString()} ft on each side. Run anyway?`);
+                const ok = confirm(`The contour area is large. Run tool anyway?`);
                 if (!ok) throw new Error("Contour run cancelled.");
             }
             const rawUrl = await runContourTool(aoi, generateContourInterval, sdk);
             contourCache = { key: contourKey, url: normalizeLayerUrl(rawUrl), interval: generateContourInterval, error: null };
         } catch (e) {
-            console.warn("Contour tool failed:", e);
             contourCache = { key: contourKey, url: null, interval: generateContourInterval, error: e };
         }
     }
