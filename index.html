@@ -248,6 +248,73 @@ button:disabled {
     font-weight: bold;
 }
 
+/* Multi-parcel list */
+.parcel-list {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    padding: 2px 4px;
+    min-height: 40px;
+    max-height: 190px;
+    overflow-y: auto;
+    flex: none;
+}
+
+.parcel-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 9px;
+}
+
+.parcel-item:last-child {
+    border-bottom: none;
+}
+
+.parcel-item .parcel-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.parcel-item .parcel-acres {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.parcel-empty {
+    color: #777;
+    font-size: 9px;
+    padding: 4px 0;
+}
+
+button.parcel-remove {
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 14px;
+    background: #b03030;
+    border-radius: 2px;
+}
+
+button.parcel-remove:hover {
+    background: #8a2020;
+}
+
+button.parcel-clear {
+    padding: 3px 10px;
+    font-size: 10px;
+    background: #666;
+    align-self: flex-start;
+}
+
+button.parcel-clear:hover {
+    background: #444;
+}
+
 .map-wrapper {
     flex: 1;
     position: relative;
@@ -465,6 +532,76 @@ const polygonRenderer = {
         outline: { color: [0, 0, 0, 1], width: 1.25 }
     }
 };
+
+// ---------- Multi-parcel selection state ----------
+// selectedParcels[sectionIdx] = Map(parcelKey -> { id, acres, geometry })
+// Kept outside initReport() so selections survive when the report is rebuilt
+// (e.g. after Generate drive times / Generate contours).
+const selectedParcels = {};
+const mainViews = {};
+let GraphicCtor = null;
+let GeometryEngine = null;
+
+function getSelection(idx){
+    if (!selectedParcels[idx]) selectedParcels[idx] = new Map();
+    return selectedParcels[idx];
+}
+
+function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Redraws the highlight graphics on the live map, the parcel list, and the totals
+function refreshParcelSelection(idx){
+    const sel = getSelection(idx);
+    const entries = Array.from(sel.values());
+    const totalAcres = entries.reduce((sum, p) => sum + (p.acres || 0), 0);
+
+    const view = mainViews[idx];
+    if (view && !view.destroyed && GraphicCtor) {
+        view.graphics.removeAll();
+        entries.forEach(p => {
+            view.graphics.add(new GraphicCtor({
+                geometry: p.geometry,
+                symbol: { type: "simple-fill", color: [0, 120, 255, 0.4], outline: { color: [0, 80, 255, 1], width: 2 } }
+            }));
+        });
+    }
+
+    const countInput = document.getElementById(`parcelIdInput_${idx}`);
+    if (countInput) countInput.value = entries.length === 0 ? "None selected" : `${entries.length} parcel${entries.length === 1 ? "" : "s"}`;
+
+    const acreInput = document.getElementById(`inputAcreage_${idx}`);
+    if (acreInput) acreInput.value = totalAcres.toFixed(2);
+
+    const listEl = document.getElementById(`parcelList_${idx}`);
+    if (listEl) {
+        if (entries.length === 0) {
+            listEl.innerHTML = `<div class="parcel-empty">No parcels selected. Click parcels on the page 1 map to add them; click a selected parcel again to remove it.</div>`;
+        } else {
+            listEl.innerHTML = entries.map((p, i) => `
+                <div class="parcel-item">
+                    <span class="parcel-name" title="${escapeHtml(p.id)}">${i + 1}. ${escapeHtml(p.id)}</span>
+                    <span class="parcel-acres">${p.acres.toFixed(2)} ac</span>
+                    <button class="parcel-remove" onclick="removeParcel(${idx}, ${i})" title="Remove parcel">&times;</button>
+                </div>`).join("");
+        }
+    }
+
+    updateCalculations(idx);
+}
+
+function removeParcel(idx, listIndex){
+    const sel = getSelection(idx);
+    const key = Array.from(sel.keys())[listIndex];
+    if (key !== undefined) sel.delete(key);
+    refreshParcelSelection(idx);
+}
+
+function clearParcels(idx){
+    getSelection(idx).clear();
+    refreshParcelSelection(idx);
+}
 
 // ---------- URL Parameters ----------
 const params = new URLSearchParams(window.location.search);
@@ -938,6 +1075,8 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
     try {
         const arcgis = await loadArcGIS();
         const { Map, MapView, Basemap, TileLayer, FeatureLayer, GraphicsLayer, Graphic, Extent, reactiveUtils } = arcgis;
+        GraphicCtor = Graphic;
+        GeometryEngine = arcgis.geometryEngine;
 
         // --- 1. MAIN WELL MAP (Page 1 Live Interactive Map) ---
         const mainGraphicsLayer = new GraphicsLayer();
@@ -970,14 +1109,16 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
         });
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
+        mainViews[sectionIdx] = mainView;
 
-        // --- Interactive Map Click Handler for Parcel Selection ---
+        // --- Interactive Map Click Handler: click to add a parcel, click again to remove it ---
         mainView.on("click", async (event) => {
             const mapPoint = mainView.toMap(event);
-            document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Searching...";
-            
+            const statusInput = document.getElementById(`parcelIdInput_${sectionIdx}`);
+            if (statusInput) statusInput.value = "Searching...";
+
             let foundParcelFeature = null;
-            let foundAcres = 0;
+            let foundLayerUrl = null;
 
             for (const url of PARCEL_LAYER_URLS) {
                 if (foundParcelFeature) break;
@@ -991,34 +1132,41 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                     });
                     if (queryResults.features && queryResults.features.length > 0) {
                         foundParcelFeature = queryResults.features[0];
-                        const areaAcres = arcgis.geometryEngine.geodesicArea(foundParcelFeature.geometry, "acres");
-                        foundAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
+                        foundLayerUrl = url;
                     }
                 } catch (e) {
                     console.warn("Parcel query error on layer:", e);
                 }
             }
 
+            const sel = getSelection(sectionIdx);
+
             if (foundParcelFeature) {
                 const attrs = foundParcelFeature.attributes;
-                const parcelId = attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel";
-                
-                document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelId;
-                document.getElementById(`inputAcreage_${sectionIdx}`).value = foundAcres.toFixed(2);
-                updateCalculations(sectionIdx);
+                const parcelId = String(attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel");
+                const key = foundLayerUrl + "|" + parcelId;
 
-                mainView.graphics.removeAll();
-                mainView.graphics.add(new arcgis.Graphic({
-                    geometry: foundParcelFeature.geometry,
-                    symbol: { type: "simple-fill", color: [0, 120, 255, 0.4], outline: { color: [0, 80, 255, 1], width: 2 } }
-                }));
+                if (sel.has(key)) {
+                    // Clicking an already-selected parcel removes it
+                    sel.delete(key);
+                } else {
+                    const areaAcres = arcgis.geometryEngine.geodesicArea(foundParcelFeature.geometry, "acres");
+                    sel.set(key, {
+                        id: parcelId,
+                        acres: areaAcres && areaAcres > 0 ? areaAcres : 0,
+                        geometry: foundParcelFeature.geometry
+                    });
+                }
+                refreshParcelSelection(sectionIdx);
             } else {
-                document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Not found";
-                document.getElementById(`inputAcreage_${sectionIdx}`).value = "0.00";
-                updateCalculations(sectionIdx);
-                alert("No parcel found at this exact point. Try clicking closer to the center of the parcel.");
+                // Keep existing selection; just flash a message
+                if (statusInput) statusInput.value = "No parcel at that point";
+                setTimeout(() => refreshParcelSelection(sectionIdx), 1500);
             }
         });
+
+        // Restore any existing selection highlights after a report rebuild
+        refreshParcelSelection(sectionIdx);
 
         // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
         const truckGraphicsLayer = new GraphicsLayer();
@@ -1182,7 +1330,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             document.getElementById(captionId).textContent = captionText;
         };
 
-        document.getElementById(mainCaptionId).textContent = `Click any parcel boundary on the map to calculate acreage | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
+        document.getElementById(mainCaptionId).textContent = `Click parcels on the map to add them (click again to remove) | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
         setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, truckCaptionText);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
@@ -1225,6 +1373,12 @@ async function initReport(){
     document.getElementById("driveBtn").disabled = true;
     document.getElementById("genDriveBtn").disabled = true;
     document.getElementById("contourBtn").disabled = true;
+
+    // Old map views are about to be replaced; drop stale references
+    Object.keys(mainViews).forEach(k => {
+        try { if (mainViews[k] && !mainViews[k].destroyed) mainViews[k].destroy(); } catch (e) {}
+        delete mainViews[k];
+    });
 
     if(uniqueWellIds.length === 0){
         reportContainer.innerHTML = "<p style='padding:20px; font-size:12px; color:#a00;'><strong>Error:</strong> No Well ID provided in URL parameters.</p>";
@@ -1301,19 +1455,23 @@ async function initReport(){
                     <div class="map-caption" id="mapCaption_contour_${sectionIdx}">Loading contours...</div>
                 </div>
 
-                <!-- Quadrant 4: Interactive Parcel Selection & Pricing Summary -->
+                <!-- Quadrant 4: Interactive Multi-Parcel Selection & Pricing Summary -->
                 <div class="quadrant-box">
                     <div class="quadrant-title">Parcel Selection & Pricing Summary</div>
                     <div class="calc-form-container">
                         <div class="calc-row" style="background:#e8f4fd; border-color:#005e95; padding:5px;">
-                            <span style="font-size:9px; color:#005e95; font-weight:bold;">Select a parcel on the page 1 map to calulcate acreage. Not selecting a parcel will result in PDF error.</span>
+                            <span style="font-size:9px; color:#005e95; font-weight:bold;">Click one or more parcels on the page 1 map to add them. Click a selected parcel again (or use the x) to remove it. Not selecting a parcel will result in PDF error.</span>
                         </div>
                         <div class="calc-row">
-                            <label>Selected Parcel ID:</label>
+                            <label>Selected Parcels:</label>
                             <input type="text" id="parcelIdInput_${sectionIdx}" value="None selected" readonly>
                         </div>
+                        <div class="parcel-list" id="parcelList_${sectionIdx}">
+                            <div class="parcel-empty">No parcels selected.</div>
+                        </div>
+                        <button class="parcel-clear" onclick="clearParcels(${sectionIdx})">Clear all parcels</button>
                         <div class="calc-row">
-                            <label>Acreage (Auto):</label>
+                            <label>Total Acreage (Auto):</label>
                             <input type="text" id="inputAcreage_${sectionIdx}" value="0.00" readonly>
                         </div>
                         <div class="calc-row">
