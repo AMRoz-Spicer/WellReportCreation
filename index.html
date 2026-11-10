@@ -1581,37 +1581,50 @@ async function downloadPDF(){
     const rawTitle = getCustomTitle();
     const safeFilename = rawTitle.replace(/[^a-zA-Z0-9-_]/g, "_") + "_Landscape.pdf";
 
-    // Capture the live Page 1 map views into static images right before building PDF
+    // Capture the live Page 1 map views into static images right before building PDF.
+    // canvas.toDataURL() returns a black image for ArcGIS WebGL canvases, so use the
+    // view's own takeScreenshot(), which also includes the blue parcel highlights.
+    const swapped = [];
     for (let sectionIdx = 0; sectionIdx < totalSections; sectionIdx++) {
         const mainViewDiv = document.getElementById(`mapView_main_${sectionIdx}`);
         const mainShotImg = document.getElementById(`mapShot_main_${sectionIdx}`);
-        if (mainViewDiv && mainViewDiv.style.display !== "none") {
+        const view = mainViews[sectionIdx];
+        if (mainViewDiv && mainShotImg && view && !view.destroyed && mainViewDiv.style.display !== "none") {
             try {
-                const canvas = mainViewDiv.querySelector("canvas");
-                if (canvas) {
-                    mainShotImg.src = canvas.toDataURL("image/jpeg", 0.95);
-                    mainShotImg.style.display = "block";
-                    mainViewDiv.style.display = "none";
-                }
+                const shot = await view.takeScreenshot({ format: "jpg", quality: 100 });
+                mainShotImg.src = shot.dataUrl;
+                mainShotImg.style.display = "block";
+                mainViewDiv.style.display = "none";
+                swapped.push({ mainViewDiv, mainShotImg });
             } catch (e) {
                 console.warn("PDF screenshot capture error:", e);
             }
         }
     }
 
-    await html2pdf()
-        .set({
-            margin: 0,
-            filename: safeFilename,
-            image: { type: "jpeg", quality: 1.0 },
-            html2canvas: { scale: 2.0, backgroundColor: "#ffffff", scrollY: 0, useCORS: true },
-            jsPDF: { unit: "in", format: "letter", orientation: "landscape" }
-        })
-        .from(document.getElementById("report"))
-        .save();
+    // Let the swapped-in images load before html2canvas reads the page
+    await new Promise(resolve => setTimeout(resolve, 300));
 
-    btn.disabled = false;
-    btn.textContent = "Download PDF";
+    try {
+        await html2pdf()
+            .set({
+                margin: 0,
+                filename: safeFilename,
+                image: { type: "jpeg", quality: 1.0 },
+                html2canvas: { scale: 2.0, backgroundColor: "#ffffff", scrollY: 0, useCORS: true },
+                jsPDF: { unit: "in", format: "letter", orientation: "landscape" }
+            })
+            .from(document.getElementById("report"))
+            .save();
+    } finally {
+        // Restore the live, clickable maps so you can keep selecting parcels after downloading
+        swapped.forEach(({ mainViewDiv, mainShotImg }) => {
+            mainShotImg.style.display = "none";
+            mainViewDiv.style.display = "";
+        });
+        btn.disabled = false;
+        btn.textContent = "Download PDF";
+    }
 }
 
 initReport();
