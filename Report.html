@@ -971,17 +971,16 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- Interactive Map Click Handler for Multi-Parcel Selection ---
-        let selectedParcelsMap = new Map(); // Key: parcel ID, Value: { feature, acres }
-
+        // --- Interactive Map Click Handler for Parcel Selection ---
         mainView.on("click", async (event) => {
             const mapPoint = mainView.toMap(event);
+            document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Searching...";
             
-            let clickedFeature = null;
-            let clickedAcres = 0;
+            let foundParcelFeature = null;
+            let foundAcres = 0;
 
             for (const url of PARCEL_LAYER_URLS) {
-                if (clickedFeature) break;
+                if (foundParcelFeature) break;
                 try {
                     const queryResults = await arcgis.query.executeQueryJSON(url, {
                         geometry: mapPoint,
@@ -991,50 +990,33 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                         outSpatialReference: { wkid: 102100 }
                     });
                     if (queryResults.features && queryResults.features.length > 0) {
-                        clickedFeature = queryResults.features[0];
-                        const areaAcres = arcgis.geometryEngine.geodesicArea(clickedFeature.geometry, "acres");
-                        clickedAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
+                        foundParcelFeature = queryResults.features[0];
+                        const areaAcres = arcgis.geometryEngine.geodesicArea(foundParcelFeature.geometry, "acres");
+                        foundAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
                     }
                 } catch (e) {
-                    console.warn("Parcel query error:", e);
+                    console.warn("Parcel query error on layer:", e);
                 }
             }
 
-            if (clickedFeature) {
-                const attrs = clickedFeature.attributes;
-                const parcelId = String(attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel");
-
-                // Toggle selection: if already selected, remove it; otherwise, add it
-                if (selectedParcelsMap.has(parcelId)) {
-                    selectedParcelsMap.delete(parcelId);
-                } else {
-                    selectedParcelsMap.set(parcelId, { feature: clickedFeature, acres: clickedAcres });
-                }
-
-                // Calculate totals
-                let totalAcres = 0;
-                let parcelIdsList = [];
+            if (foundParcelFeature) {
+                const attrs = foundParcelFeature.attributes;
+                const parcelId = attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel";
                 
-                // Clear parcel graphics (keep well graphics? Re-add mainGraphicsLayer graphics if needed, or clear user graphics)
-                mainView.graphics.removeAll();
-
-                selectedParcelsMap.forEach((data, id) => {
-                    totalAcres += data.acres;
-                    parcelIdsList.push(id);
-
-                    // Redraw highlight for each selected parcel
-                    mainView.graphics.add(new arcgis.Graphic({
-                        geometry: data.feature.geometry,
-                        symbol: { type: "simple-fill", color: [0, 120, 255, 0.35], outline: { color: [0, 80, 255, 1], width: 2 } }
-                    }));
-                });
-
-                // Update Form UI
-                document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelIdsList.length > 0 ? parcelIdsList.join(", ") : "None selected";
-                document.getElementById(`inputAcreage_${sectionIdx}`).value = totalAcres.toFixed(2);
+                document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelId;
+                document.getElementById(`inputAcreage_${sectionIdx}`).value = foundAcres.toFixed(2);
                 updateCalculations(sectionIdx);
+
+                mainView.graphics.removeAll();
+                mainView.graphics.add(new arcgis.Graphic({
+                    geometry: foundParcelFeature.geometry,
+                    symbol: { type: "simple-fill", color: [0, 120, 255, 0.4], outline: { color: [0, 80, 255, 1], width: 2 } }
+                }));
             } else {
-                alert("No parcel found at this point. Try clicking inside a parcel boundary.");
+                document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Not found";
+                document.getElementById(`inputAcreage_${sectionIdx}`).value = "0.00";
+                updateCalculations(sectionIdx);
+                alert("No parcel found at this exact point. Try clicking closer to the center of the parcel.");
             }
         });
 
@@ -1200,7 +1182,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             document.getElementById(captionId).textContent = captionText;
         };
 
-        document.getElementById(mainCaptionId).textContent = `Click parcels on map to add/remove | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
+        document.getElementById(mainCaptionId).textContent = `Click any parcel boundary on the map to calculate acreage | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
         setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, truckCaptionText);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
@@ -1324,14 +1306,14 @@ async function initReport(){
                     <div class="quadrant-title">Parcel Selection & Pricing Summary</div>
                     <div class="calc-form-container">
                         <div class="calc-row" style="background:#e8f4fd; border-color:#005e95; padding:5px;">
-                            <span style="font-size:9px; color:#005e95; font-weight:bold;">👉 Click multiple parcels on Page 1 map to add/remove them!</span>
+                            <span style="font-size:9px; color:#005e95; font-weight:bold;">Select a parcel on the page 1 map to calulcate acreage. Not selecting a parcel will result in PDF error.</span>
                         </div>
                         <div class="calc-row">
-                            <label>Selected Parcels:</label>
+                            <label>Selected Parcel ID:</label>
                             <input type="text" id="parcelIdInput_${sectionIdx}" value="None selected" readonly>
                         </div>
                         <div class="calc-row">
-                            <label>Total Acreage (Auto):</label>
+                            <label>Acreage (Auto):</label>
                             <input type="text" id="inputAcreage_${sectionIdx}" value="0.00" readonly>
                         </div>
                         <div class="calc-row">
