@@ -971,16 +971,18 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-        // --- Interactive Map Click Handler for Parcel Selection ---
+       // Track selected parcels for this section session
+        let selectedParcelsMap = new Map(); // Key: parcel ID, Value: { feature, acres }
+
+        // --- Interactive Map Click Handler for Multi-Parcel Selection ---
         mainView.on("click", async (event) => {
             const mapPoint = mainView.toMap(event);
-            document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Searching...";
             
-            let foundParcelFeature = null;
-            let foundAcres = 0;
+            let clickedFeature = null;
+            let clickedAcres = 0;
 
             for (const url of PARCEL_LAYER_URLS) {
-                if (foundParcelFeature) break;
+                if (clickedFeature) break;
                 try {
                     const queryResults = await arcgis.query.executeQueryJSON(url, {
                         geometry: mapPoint,
@@ -990,36 +992,50 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                         outSpatialReference: { wkid: 102100 }
                     });
                     if (queryResults.features && queryResults.features.length > 0) {
-                        foundParcelFeature = queryResults.features[0];
-                        const areaAcres = arcgis.geometryEngine.geodesicArea(foundParcelFeature.geometry, "acres");
-                        foundAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
+                        clickedFeature = queryResults.features[0];
+                        const areaAcres = arcgis.geometryEngine.geodesicArea(clickedFeature.geometry, "acres");
+                        clickedAcres = areaAcres && areaAcres > 0 ? areaAcres : 0;
                     }
                 } catch (e) {
-                    console.warn("Parcel query error on layer:", e);
+                    console.warn("Parcel query error:", e);
                 }
             }
 
-            if (foundParcelFeature) {
-                const attrs = foundParcelFeature.attributes;
-                const parcelId = attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel";
-                
-                document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelId;
-                document.getElementById(`inputAcreage_${sectionIdx}`).value = foundAcres.toFixed(2);
-                updateCalculations(sectionIdx);
+            if (clickedFeature) {
+                const attrs = clickedFeature.attributes;
+                const parcelId = String(attrs.PARCELID || attrs.PIN || attrs.ACCOUNT || attrs.PAR_NUM || attrs.OBJECTID || "Parcel");
 
+                // Toggle selection: if already selected, remove it; otherwise, add it
+                if (selectedParcelsMap.has(parcelId)) {
+                    selectedParcelsMap.delete(parcelId);
+                } else {
+                    selectedParcelsMap.set(parcelId, { feature: clickedFeature, acres: clickedAcres });
+                }
+
+                // Calculate totals
+                let totalAcres = 0;
+                let parcelIdsList = [];
                 mainView.graphics.removeAll();
-                mainView.graphics.add(new arcgis.Graphic({
-                    geometry: foundParcelFeature.geometry,
-                    symbol: { type: "simple-fill", color: [0, 120, 255, 0.4], outline: { color: [0, 80, 255, 1], width: 2 } }
-                }));
-            } else {
-                document.getElementById(`parcelIdInput_${sectionIdx}`).value = "Not found";
-                document.getElementById(`inputAcreage_${sectionIdx}`).value = "0.00";
+
+                selectedParcelsMap.forEach((data, id) => {
+                    totalAcres += data.acres;
+                    parcelIdsList.push(id);
+
+                    // Redraw highlight for each selected parcel
+                    mainView.graphics.add(new arcgis.Graphic({
+                        geometry: data.feature.geometry,
+                        symbol: { type: "simple-fill", color: [0, 120, 255, 0.35], outline: { color: [0, 80, 255, 1], width: 2 } }
+                    }));
+                });
+
+                // Update Form UI
+                document.getElementById(`parcelIdInput_${sectionIdx}`).value = parcelIdsList.length > 0 ? parcelIdsList.join(", ") : "None selected";
+                document.getElementById(`inputAcreage_${sectionIdx}`).value = totalAcres.toFixed(2);
                 updateCalculations(sectionIdx);
-                alert("No parcel found at this exact point. Try clicking closer to the center of the parcel.");
+            } else {
+                alert("No parcel found at this point. Try clicking inside a parcel boundary.");
             }
         });
-
         // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
         const truckGraphicsLayer = new GraphicsLayer();
         const truckMapLayers = [];
