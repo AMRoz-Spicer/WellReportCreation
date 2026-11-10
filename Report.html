@@ -971,10 +971,9 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
 
         mainView = new MapView({ container: mainViewDivId, map: mainMap, constraints: { snapToZoom: false }, ui: { components: [] } });
 
-       // Track selected parcels for this section session
+        // --- Interactive Map Click Handler for Multi-Parcel Selection ---
         let selectedParcelsMap = new Map(); // Key: parcel ID, Value: { feature, acres }
 
-        // --- Interactive Map Click Handler for Multi-Parcel Selection ---
         mainView.on("click", async (event) => {
             const mapPoint = mainView.toMap(event);
             
@@ -1015,6 +1014,8 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 // Calculate totals
                 let totalAcres = 0;
                 let parcelIdsList = [];
+                
+                // Clear parcel graphics (keep well graphics? Re-add mainGraphicsLayer graphics if needed, or clear user graphics)
                 mainView.graphics.removeAll();
 
                 selectedParcelsMap.forEach((data, id) => {
@@ -1036,6 +1037,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
                 alert("No parcel found at this point. Try clicking inside a parcel boundary.");
             }
         });
+
         // --- 2. DRIVE-TIME MAP (Top-Right Quadrant) ---
         const truckGraphicsLayer = new GraphicsLayer();
         const truckMapLayers = [];
@@ -1198,7 +1200,7 @@ async function renderSectionMaps(sectionIdx, sectionWellIds, allFeatures){
             document.getElementById(captionId).textContent = captionText;
         };
 
-        document.getElementById(mainCaptionId).textContent = `Click any parcel boundary on the map to calculate acreage | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
+        document.getElementById(mainCaptionId).textContent = `Click parcels on map to add/remove | Section Wells: ${sectionFeatures.map(f => f.attributes[WELLS_ID_FIELD]).join(", ")}`;
         setImg(truckShotImgId, truckShot, truckViewDivId, truckCaptionId, truckCaptionText);
         setImg(wetlandShotImgId, wetlandShot, wetlandViewDivId, wetlandCaptionId, `Wetland Analysis Layer`);
         setImg(contourShotImgId, contourShot, contourViewDivId, contourCaptionId, contourCaptionText);
@@ -1322,14 +1324,14 @@ async function initReport(){
                     <div class="quadrant-title">Parcel Selection & Pricing Summary</div>
                     <div class="calc-form-container">
                         <div class="calc-row" style="background:#e8f4fd; border-color:#005e95; padding:5px;">
-                            <span style="font-size:9px; color:#005e95; font-weight:bold;">Select a parcel on the page 1 map to calulcate acreage. Not selecting a parcel will result in PDF error.</span>
+                            <span style="font-size:9px; color:#005e95; font-weight:bold;">👉 Click multiple parcels on Page 1 map to add/remove them!</span>
                         </div>
                         <div class="calc-row">
-                            <label>Selected Parcel ID:</label>
+                            <label>Selected Parcels:</label>
                             <input type="text" id="parcelIdInput_${sectionIdx}" value="None selected" readonly>
                         </div>
                         <div class="calc-row">
-                            <label>Acreage (Auto):</label>
+                            <label>Total Acreage (Auto):</label>
                             <input type="text" id="inputAcreage_${sectionIdx}" value="0.00" readonly>
                         </div>
                         <div class="calc-row">
